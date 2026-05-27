@@ -10,12 +10,12 @@ const app  = express();
 const PORT = process.env.PORT || 5000;
 
 // ── Configuration ──────────────────────────────────────────────
-const SCHOOL_EMAIL = 'jaf89575@gmail.com';
+const SCHOOL_EMAIL = 'christiankibona840@gmail.com';
 const SMTP_CONFIG  = {
   service: 'gmail',
   auth: {
-    user: 'jaf89575@gmail.com',
-    pass: 'jhxd iwnu ggqs wnnm'
+    user: 'christiankibona840@gmail.com',
+    pass: 'tenq clue zaog zvgh'
   }
 };
 
@@ -177,7 +177,7 @@ function buildEmailHTML(d, fullName, submissionDate) {
 </div>
 <div style="background:#f7f9fc;padding:16px 28px;text-align:center;font-size:11px;color:#888;">
   <strong style="color:#1a365d;">Shule ya Sekondari Tabora Wavulana</strong><br>
-  S.L.P 374, Tabora · Simu: 0755 297 005 · <span style="color:#c8962a;">jaf89575@gmail.com</span>
+  S.L.P 374, Tabora · Simu: 0755 297 005 · <span style="color:#c8962a;">christiankibona840@gmail.com</span>
 </div></div></body></html>`;
 }
 
@@ -319,7 +319,6 @@ app.delete('/api/admin/students/:id', (req, res) => {
   res.json({ success:true, message:`Rekodi ya ID ${req.params.id} imefutwa` });
 });
 
-
 // ── SQLite: add form5 columns if they don't exist ──────────────
 try {
   db.exec(`
@@ -372,20 +371,17 @@ function savePdfLayouts() {
   catch(e) { console.error('PdfLayouts save error:', e.message); }
 }
 
-// GET /api/status — health check (alias for /api/health, used by frontend)
 app.get('/api/status', (req, res) => {
   const { total } = db.prepare('SELECT COUNT(*) AS total FROM students').get();
   res.json({ status: 'ok', total_registrations: total, regStatus });
 });
 
-// GET /api/registration-status?form=form1
 app.get('/api/registration-status', (req, res) => {
   const form = req.query.form || 'form1';
   if (!regStatus[form]) return res.status(404).json({ error: 'Fomu haijulikani' });
   res.json(regStatus[form]);
 });
 
-// POST /api/registration-status — admin opens/closes registration
 app.post('/api/registration-status', (req, res) => {
   const { form, open, message, deadline } = req.body;
   if (!form || !regStatus[form]) return res.status(400).json({ error: 'form lazima iwe form1 au form5' });
@@ -395,13 +391,11 @@ app.post('/api/registration-status', (req, res) => {
   res.json({ success: true, form, status: regStatus[form] });
 });
 
-// GET /api/pdf-layout?form=form1
 app.get('/api/pdf-layout', (req, res) => {
   const form = req.query.form || 'form1';
   res.json(pdfLayouts[form] || {});
 });
 
-// POST /api/pdf-layout — admin saves PDF layout settings
 app.post('/api/pdf-layout', (req, res) => {
   const { form, layout } = req.body;
   if (!form || !['form1','form5'].includes(form)) return res.status(400).json({ error: 'form lazima iwe form1 au form5' });
@@ -412,7 +406,6 @@ app.post('/api/pdf-layout', (req, res) => {
 });
 
 // ── Override /api/register to support both form1 and form5 ─────
-// (removes the old handler and adds a unified one)
 app._router.stack = app._router.stack.filter(layer => {
   if (layer.route && layer.route.path === '/api/register') return false;
   return true;
@@ -425,7 +418,6 @@ app.post('/api/register', upload.single('pdf'), async (req, res) => {
     const d = JSON.parse(req.body.studentData);
     const formLevel = d.formLevel || 'form1';
 
-    // Block if registration is closed
     if (!regStatus[formLevel]?.open) {
       return res.status(403).json({
         success: false,
@@ -469,7 +461,6 @@ app.post('/api/register', upload.single('pdf'), async (req, res) => {
       raw_json: JSON.stringify(d)
     });
 
-    // Save form5 extra columns
     if (formLevel === 'form5') {
       try {
         db.prepare(`UPDATE students SET
@@ -497,7 +488,6 @@ app.post('/api/register', upload.single('pdf'), async (req, res) => {
       attachments.push({ filename: `TaboraBoys_${formLabel.replace(/\s+/g,'_')}_${fullName.replace(/\s+/g,'_')}_2026.pdf`, path: pdfPath });
     }
 
-    // Build email HTML for form5 with combination info
     let emailHtml;
     if (formLevel === 'form5') {
       emailHtml = buildForm5EmailHTML(d, fullName, submissionDate);
@@ -597,7 +587,7 @@ app.get('/api/admin/students/filter', (req, res) => {
   res.json({ success:true, page, limit, total, pages:Math.ceil(total/limit), data:rows });
 });
 
-// ── Admin: combined summary (form1 + form5 breakdown) ─────────
+// ── Admin: combined summary ────────────────────────────────────
 app.get('/api/admin/summary', (req, res) => {
   const total   = db.prepare('SELECT COUNT(*) AS n FROM students').get().n;
   const form1   = db.prepare("SELECT COUNT(*) AS n FROM students WHERE form_level='form1' OR form_level IS NULL").get().n;
