@@ -7,6 +7,8 @@
   <title>Student Records — TBSS</title>
   <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <!-- Supabase JS client -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
     :root {
       --primary:   #1a365d;
@@ -62,9 +64,38 @@
       border:1px solid #bee3f8; border-radius:20px;
       padding:.28rem .85rem; font-size:.75rem; font-weight:700;
     }
+    .pill.online  { background:#f0fff4; color:#276749; border-color:#9ae6b4; }
+    .pill.offline { background:#fff5f5; color:#c53030; border-color:#feb2b2; }
+    .pill.loading { background:#fffff0; color:#b7791f; border-color:#faf089; }
 
     /* ── PAGE ── */
     .page { max-width:1100px; margin:0 auto; padding:1.75rem 2rem; }
+
+    /* ── LOADER OVERLAY ── */
+    .loader-wrap {
+      display:flex; flex-direction:column;
+      align-items:center; justify-content:center;
+      padding:4rem 2rem; gap:1rem;
+    }
+    .spinner {
+      width:40px; height:40px; border-radius:50%;
+      border:4px solid var(--border);
+      border-top-color:var(--secondary);
+      animation:spin .75s linear infinite;
+    }
+    @keyframes spin { to { transform:rotate(360deg); } }
+    .loader-txt { font-size:.85rem; color:var(--muted); font-weight:600; }
+
+    /* ── ERROR BANNER ── */
+    .error-banner {
+      background:#fff5f5; border:1px solid #feb2b2;
+      border-radius:10px; padding:1rem 1.3rem;
+      margin-bottom:1.2rem;
+      display:flex; align-items:flex-start; gap:.75rem;
+    }
+    .error-banner i { color:#c53030; margin-top:2px; }
+    .error-banner .err-body h4 { font-size:.88rem; color:#c53030; margin-bottom:.25rem; }
+    .error-banner .err-body p  { font-size:.8rem; color:#742a2a; line-height:1.5; }
 
     /* ── SEARCH BAR ── */
     .search-wrap {
@@ -218,6 +249,19 @@
       padding:2.5rem; text-align:center; color:var(--muted); font-size:.88rem;
     }
 
+    /* ── REFRESH BUTTON ── */
+    .refresh-btn {
+      background:#fff; border:1px solid var(--border);
+      border-radius:8px; padding:.4rem .9rem;
+      font-family:'DM Sans',sans-serif; font-size:.78rem;
+      font-weight:700; color:var(--secondary);
+      cursor:pointer; display:flex; align-items:center; gap:.4rem;
+      transition:all .2s;
+    }
+    .refresh-btn:hover { background:var(--secondary); color:#fff; border-color:var(--secondary); }
+    .refresh-btn i { font-size:.75rem; }
+    .refresh-btn.spinning i { animation:spin .6s linear infinite; }
+
     @media(max-width:640px){
       .nav { padding:.75rem 1rem; }
       .page { padding:1rem; }
@@ -239,12 +283,27 @@
       </div>
     </div>
     <div class="hdr-right">
-      <div class="pill" id="hdrTotal">0 students</div>
+      <div class="pill loading" id="statusPill">
+        <i class="fas fa-circle-notch fa-spin" style="margin-right:4px;font-size:.65rem;"></i>Connecting…
+      </div>
+      <div class="pill" id="hdrTotal" style="display:none">0 students</div>
+      <button class="refresh-btn" id="refreshBtn" onclick="loadAll()" title="Refresh data">
+        <i class="fas fa-sync-alt"></i> Refresh
+      </button>
     </div>
   </div>
 </header>
 
 <div class="page">
+
+  <!-- ERROR BANNER (hidden by default) -->
+  <div class="error-banner" id="errorBanner" style="display:none">
+    <i class="fas fa-exclamation-circle"></i>
+    <div class="err-body">
+      <h4>Could not connect to database</h4>
+      <p id="errorMsg">Check your Supabase URL and anon key in the script below, then refresh.</p>
+    </div>
+  </div>
 
   <!-- SEARCH -->
   <div class="search-wrap">
@@ -267,114 +326,126 @@
 
   <!-- FORM 1 PANEL -->
   <div class="tab-panel active f1" id="panelF1" data-label="FORM ONE">
-    <div id="f1Content"></div>
+    <div id="f1Content">
+      <div class="loader-wrap">
+        <div class="spinner"></div>
+        <div class="loader-txt">Loading Form One records…</div>
+      </div>
+    </div>
   </div>
 
   <!-- FORM 5 PANEL -->
   <div class="tab-panel f5" id="panelF5" data-label="FORM FIVE">
-    <div id="f5Content"></div>
+    <div id="f5Content">
+      <div class="loader-wrap">
+        <div class="spinner"></div>
+        <div class="loader-txt">Loading Form Five records…</div>
+      </div>
+    </div>
   </div>
 
 </div>
 
 <script>
-  /*
-   * ─────────────────────────────────────────────────────────────
-   *  DATA SOURCES
-   *  Form One  → localStorage key: 'taboraBoys2026'  (shudi.html)
-   *  Form Five → localStorage key: 'taboraBoysForm5' (form5.html)
-   * ─────────────────────────────────────────────────────────────
-   */
+  /* ================================================================
+   *  ▼ CONFIGURE YOUR SUPABASE PROJECT HERE ▼
+   *  Get these from: supabase.com → Your Project → Settings → API
+   * ================================================================ */
+  const SUPABASE_URL  = 'https://mfkvwcryiclehbrkqthu.supabase.co';   // ← replace
+  const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1ma3Z3Y3J5aWNsZWhicmtxdGh1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4NDMxMTksImV4cCI6MjA5NTQxOTExOX0.Sj3i_J5TvGCEm-imsmDreXwuOld3NZcuvsCukgcCe7o';                  // ← replace
+  /* ================================================================ */
 
-  const KEYS = {
-    f1: 'taboraBoys2026',    // shudi.html
-    f5: 'taboraBoysForm5'    // form5.html
-  };
+  const db = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
 
   /* ── State ── */
   let dataF1 = [], dataF5 = [];
   let currentTab = 'f1';
-  let searchQ = '';
+  let searchQ    = '';
 
-  /* ── Boot: read from localStorage ── */
-  function boot() {
-    dataF1 = readFromStorage(KEYS.f1);
-    dataF5 = readFromStorage(KEYS.f5);
-    updateCounts();
-    renderTab('f1');
-    renderTab('f5');
-  }
+  /* ── Boot ── */
+  async function loadAll() {
+    setStatus('loading');
+    spinRefresh(true);
+    document.getElementById('errorBanner').style.display = 'none';
 
-  /* ── Safely parse localStorage ── */
-  function readFromStorage(key) {
     try {
-      const raw = localStorage.getItem(key);
-      if (!raw) return [];
-      const parsed = JSON.parse(raw);
-      // Support both array of objects and object-of-objects (e.g. { '0': {...}, '1': {...} })
-      if (Array.isArray(parsed)) return parsed;
-      if (typeof parsed === 'object' && parsed !== null) return Object.values(parsed);
-      return [];
-    } catch(e) {
-      console.warn('Failed to read key:', key, e);
-      return [];
+      const [r1, r5] = await Promise.all([
+        db.from('students').select('*').eq('form', 'f1').order('registration_date', { ascending: false }),
+        db.from('students').select('*').eq('form', 'f5').order('registration_date', { ascending: false })
+      ]);
+
+      if (r1.error) throw r1.error;
+      if (r5.error) throw r5.error;
+
+      dataF1 = r1.data || [];
+      dataF5 = r5.data || [];
+
+      updateCounts();
+      renderTab('f1');
+      renderTab('f5');
+      setStatus('online');
+    } catch (err) {
+      console.error('Supabase error:', err);
+      setStatus('offline');
+      document.getElementById('errorBanner').style.display = 'flex';
+      document.getElementById('errorMsg').textContent =
+        err.message || 'Unknown error. Check SUPABASE_URL and SUPABASE_ANON key.';
+      renderError('f1');
+      renderError('f5');
+    } finally {
+      spinRefresh(false);
     }
   }
 
-  /*
-   * ── Full name extractor ──
-   * Tries multiple field name conventions used by registration forms:
-   *   Swahili:  jina1 / jina2 / jina3
-   *   English:  firstName / middleName / lastName
-   *   Alt:      first_name / middle_name / last_name
-   *   Single:   name / jina / fullName / full_name / studentName
-   */
+  /* ── Status pill ── */
+  function setStatus(state) {
+    const pill = document.getElementById('statusPill');
+    const tot  = document.getElementById('hdrTotal');
+    pill.className = 'pill ' + state;
+    if (state === 'online') {
+      pill.innerHTML = '<i class="fas fa-circle" style="margin-right:4px;font-size:.55rem;color:#48bb78;"></i>Online';
+      tot.style.display = '';
+    } else if (state === 'offline') {
+      pill.innerHTML = '<i class="fas fa-circle" style="margin-right:4px;font-size:.55rem;color:#fc8181;"></i>Offline';
+      tot.style.display = 'none';
+    } else {
+      pill.innerHTML = '<i class="fas fa-circle-notch fa-spin" style="margin-right:4px;font-size:.65rem;"></i>Connecting…';
+      tot.style.display = 'none';
+    }
+  }
+
+  function spinRefresh(on) {
+    const btn = document.getElementById('refreshBtn');
+    btn.classList.toggle('spinning', on);
+    btn.disabled = on;
+  }
+
+  /* ── Full name extractor ── */
   function fullName(s) {
     if (!s || typeof s !== 'object') return '(Unknown)';
-
-    // Try Swahili field names (jina1, jina2, jina3)
-    if (s.jina1 || s.jina2 || s.jina3) {
+    if (s.jina1 || s.jina2 || s.jina3)
       return [s.jina1, s.jina2, s.jina3].filter(Boolean).join(' ').trim();
-    }
-
-    // Try camelCase English fields
-    if (s.firstName || s.lastName) {
+    if (s.firstName || s.lastName)
       return [s.firstName, s.middleName, s.lastName].filter(Boolean).join(' ').trim();
-    }
-
-    // Try snake_case English fields
-    if (s.first_name || s.last_name) {
+    if (s.first_name || s.last_name)
       return [s.first_name, s.middle_name, s.last_name].filter(Boolean).join(' ').trim();
-    }
-
-    // Try single-field names
-    const single = s.fullName || s.full_name || s.studentName ||
-                   s.student_name || s.name || s.jina;
+    const single = s.fullName || s.full_name || s.studentName || s.name || s.jina;
     if (single) return String(single).trim();
-
-    // Last resort: join all string values
-    const vals = Object.values(s).filter(v => typeof v === 'string' && v.trim().length > 1);
-    if (vals.length) return vals.slice(0, 3).join(' ').trim();
-
     return '(Unknown)';
   }
 
-  /* ── Get registration year from a record ── */
+  /* ── Get year from record ── */
   function getYear(s) {
-    // Common date field names
-    const dateVal = s.registrationDate || s.registration_date ||
-                    s.tarehe || s.date || s.createdAt || s.created_at;
-    if (dateVal) {
-      const y = new Date(dateVal).getFullYear();
+    if (s.year) return String(s.year);
+    const d = s.registration_date || s.registrationDate || s.tarehe || s.created_at;
+    if (d) {
+      const y = new Date(d).getFullYear();
       if (!isNaN(y)) return String(y);
     }
-    // Explicit year field
-    const yr = s.year || s.mwaka || s.mwaka_wa_kujiunga;
-    if (yr) return String(yr);
     return 'Unknown';
   }
 
-  /* ── Group students by year ── */
+  /* ── Group by year ── */
   function groupByYear(arr) {
     const map = {};
     arr.forEach(s => {
@@ -382,15 +453,12 @@
       if (!map[yr]) map[yr] = [];
       map[yr].push(fullName(s));
     });
-    const sorted = Object.keys(map).sort((a, b) => {
-      if (a === 'Unknown') return 1;
-      if (b === 'Unknown') return -1;
-      return b - a;
-    });
-    return sorted.map(yr => ({ year: yr, names: map[yr].sort() }));
+    return Object.keys(map)
+      .sort((a, b) => a === 'Unknown' ? 1 : b === 'Unknown' ? -1 : b - a)
+      .map(yr => ({ year: yr, names: map[yr].sort() }));
   }
 
-  /* ── Highlight search match ── */
+  /* ── Highlight ── */
   function highlight(name, q) {
     if (!q) return name;
     const idx = name.toLowerCase().indexOf(q.toLowerCase());
@@ -400,13 +468,27 @@
       name.slice(idx + q.length);
   }
 
-  /* ── Render a tab's content ── */
+  /* ── Render error state ── */
+  function renderError(tab) {
+    const target = document.getElementById(tab === 'f1' ? 'f1Content' : 'f5Content');
+    target.innerHTML = `
+      <div class="year-section">
+        <div class="empty">
+          <div class="ico"><i class="fas fa-wifi" style="color:#fc8181;"></i></div>
+          <h3>Connection failed</h3>
+          <p>Could not load records from the database.<br>
+             Check your Supabase credentials and try refreshing.</p>
+        </div>
+      </div>`;
+  }
+
+  /* ── Render tab ── */
   function renderTab(tab) {
     const data    = tab === 'f1' ? dataF1 : dataF5;
     const formLbl = tab === 'f1' ? 'Form I' : 'Form V';
     const srcFile = tab === 'f1' ? 'shudi.html' : 'form5.html';
     const target  = document.getElementById(tab === 'f1' ? 'f1Content' : 'f5Content');
-    const q = searchQ.trim();
+    const q       = searchQ.trim();
 
     if (data.length === 0) {
       target.innerHTML = `
@@ -431,13 +513,12 @@
       const filtered = q
         ? g.names.filter(n => n.toLowerCase().includes(q.toLowerCase()))
         : g.names;
-
       if (filtered.length === 0) return;
       anyVisible = true;
 
-      const isOpen   = gi === 0 || !!q;
+      const isOpen    = gi === 0 || !!q;
       const sectionId = `sec-${tab}-${gi}`;
-      const yr = g.year;
+      const yr        = g.year;
 
       html += `
         <div class="year-section ${isOpen ? 'open' : ''} ${tab}" id="${sectionId}">
@@ -476,7 +557,7 @@
     target.innerHTML = html;
   }
 
-  /* ── Update tab badge counts ── */
+  /* ── Counts ── */
   function updateCounts() {
     document.getElementById('countF1').textContent = dataF1.length;
     document.getElementById('countF5').textContent = dataF5.length;
@@ -484,7 +565,7 @@
       (dataF1.length + dataF5.length) + ' students';
   }
 
-  /* ── Switch tabs ── */
+  /* ── Tab switch ── */
   function switchTab(tab) {
     currentTab = tab;
     document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
@@ -493,7 +574,7 @@
     document.getElementById('tabF5').className = 'tab-btn' + (tab === 'f5' ? ' active-f5' : '');
   }
 
-  /* ── Accordion toggle ── */
+  /* ── Accordion ── */
   function toggleSection(id) {
     document.getElementById(id).classList.toggle('open');
   }
@@ -515,7 +596,8 @@
     renderTab('f5');
   }
 
-  boot();
+  /* ── Start ── */
+  loadAll();
 </script>
 </body>
 </html>
