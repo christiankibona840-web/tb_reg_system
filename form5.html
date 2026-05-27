@@ -3,17 +3,22 @@
 <head>
 <script>
 (function(){
-  try {
-    var vis = JSON.parse(localStorage.getItem('tbss_vis')||'{}');
-    var pageKey = 'taboraBoysForm5';
-    if(vis.siteVis && vis.siteVis[pageKey]===false){
-      document.documentElement.style.display='none';
-      document.addEventListener('DOMContentLoaded',function(){
-        document.body.innerHTML='<div style="font-family:sans-serif;text-align:center;padding:80px;color:#666;"><h2>Page Unavailable</h2><p>'+(vis.closedMsg||'This page is currently unavailable.')+'</p></div>';
-        document.documentElement.style.display='';
-      });
-    }
-  } catch(e){}
+  // Visibility check now uses Supabase asynchronously — page shows by default,
+  // then hides if the server says so (avoids blocking initial render).
+  const SUPABASE_URL = 'https://mfkvwcryiclehbrkqthu.supabase.co';
+  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1ma3Z3Y3J5aWNsZWhicmtxdGh1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4NDMxMTksImV4cCI6MjA5NTQxOTExOX0.Sj3i_J5TvGCEm-imsmDreXwuOld3NZcuvsCukgcCe7o';
+  fetch(`${SUPABASE_URL}/rest/v1/kv_store?key=eq.tbss_vis&select=value`, {
+    headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }
+  }).then(r => r.json()).then(data => {
+    if (!data || !data.length) return;
+    try {
+      const vis = JSON.parse(data[0].value);
+      const pageKey = 'taboraBoysForm5';
+      if (vis.siteVis && vis.siteVis[pageKey] === false) {
+        document.body.innerHTML = '<div style="font-family:sans-serif;text-align:center;padding:80px;color:#666;"><h2>Page Unavailable</h2><p>' + (vis.closedMsg || 'This page is currently unavailable.') + '</p></div>';
+      }
+    } catch(e) {}
+  }).catch(() => {});
 })();
 </script>
   <meta charset="UTF-8">
@@ -616,7 +621,7 @@
           <div class="combo-grid">
             <div class="combo-card" onclick="selectCombo('PCB')" id="combo-PCB">
               <div class="combo-code">PCB</div>
-              <div class="combo-name">Physics, Chemistry & Biology</div>
+              <div class="combo-name">Physics, Chemistry &amp; Biology</div>
               <div class="combo-subjects">
                 <span>Physics</span><span>Chemistry</span><span>Biology</span>
                 <span style="background:#fefcbf;color:#744210;">+General Studies</span>
@@ -624,7 +629,7 @@
             </div>
             <div class="combo-card" onclick="selectCombo('PAM')" id="combo-PAM">
               <div class="combo-code">PAM</div>
-              <div class="combo-name">Physics, Advanced Mathematics & Further Mathematics</div>
+              <div class="combo-name">Physics, Advanced Mathematics &amp; Further Mathematics</div>
               <div class="combo-subjects">
                 <span>Physics</span><span>Advanced Maths</span><span>Further Maths</span>
                 <span style="background:#fefcbf;color:#744210;">+General Studies</span>
@@ -632,7 +637,7 @@
             </div>
             <div class="combo-card" onclick="selectCombo('HGL')" id="combo-HGL">
               <div class="combo-code">HGL</div>
-              <div class="combo-name">History, Geography & Literature</div>
+              <div class="combo-name">History, Geography &amp; Literature</div>
               <div class="combo-subjects">
                 <span>History</span><span>Geography</span><span>Literature in English</span>
                 <span style="background:#fefcbf;color:#744210;">+General Studies</span>
@@ -640,7 +645,7 @@
             </div>
             <div class="combo-card" onclick="selectCombo('PMC')" id="combo-PMC">
               <div class="combo-code">PMC</div>
-              <div class="combo-name">Physics, Mathematics & Chemistry</div>
+              <div class="combo-name">Physics, Mathematics &amp; Chemistry</div>
               <div class="combo-subjects">
                 <span>Physics</span><span>Mathematics</span><span>Chemistry</span>
                 <span style="background:#fefcbf;color:#744210;">+General Studies</span>
@@ -688,7 +693,6 @@
               <input type="number" id="cseeAggregates" class="form-input" placeholder="mfano: 12" min="7" max="36">
             </div>
           </div>
-          <!-- Subject results table -->
           <h4 style="color:var(--form5);font-size:0.95rem;font-weight:700;margin-bottom:12px;margin-top:10px;"><i class="fas fa-table" style="margin-right:6px;"></i>Matokeo ya Masomo ya O-Level</h4>
           <div style="overflow-x:auto;">
             <table class="results-table">
@@ -700,9 +704,7 @@
                   <th>Pointi (1–9)</th>
                 </tr>
               </thead>
-              <tbody id="resultsTableBody">
-                <!-- Filled by JS -->
-              </tbody>
+              <tbody id="resultsTableBody"></tbody>
             </table>
           </div>
         </div>
@@ -856,7 +858,6 @@
               </select>
             </div>
           </div>
-          <!-- Vivuli vya Vyeti -->
           <div style="margin-top:20px;">
             <h4 style="color:var(--primary);font-size:1rem;margin-bottom:10px;font-weight:700;"><i class="fas fa-id-card" style="margin-right:6px;color:var(--form5);"></i>Pakia Kivuli cha Cheti cha Kuzaliwa</h4>
             <div class="photo-grid">
@@ -1020,7 +1021,7 @@
         </div>
 
         <div class="pdf-section" id="pdf-sec-afya">
-          <div class="pdf-section-title">5. Afya & Hati</div>
+          <div class="pdf-section-title">5. Afya &amp; Hati</div>
           <div class="pdf-row pdf-row-3">
             <div class="pdf-field"><div class="pdf-label">Bima ya Afya:</div><div class="pdf-value" id="pdf-bima"></div></div>
             <div class="pdf-field"><div class="pdf-label">Cheti cha Kuzaliwa:</div><div class="pdf-value" id="pdf-cheti"></div></div>
@@ -1062,7 +1063,60 @@
   </div>
 
   <script>
-    // === CONFIG ===
+    // =============================================
+    //  SUPABASE CONFIG & HELPERS
+    // =============================================
+    const SUPABASE_URL = 'https://mfkvwcryiclehbrkqthu.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1ma3Z3Y3J5aWNsZWhicmtxdGh1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4NDMxMTksImV4cCI6MjA5NTQxOTExOX0.Sj3i_J5TvGCEm-imsmDreXwuOld3NZcuvsCukgcCe7o';
+
+    async function sbGet(key) {
+      try {
+        const r = await fetch(
+          `${SUPABASE_URL}/rest/v1/kv_store?key=eq.${encodeURIComponent(key)}&select=value`,
+          { headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` } }
+        );
+        const data = await r.json();
+        return (data && data.length > 0) ? data[0].value : null;
+      } catch(e) { return null; }
+    }
+
+    async function sbSet(key, value) {
+      try {
+        await fetch(`${SUPABASE_URL}/rest/v1/kv_store`, {
+          method: 'POST',
+          headers: {
+            'apikey': SUPABASE_ANON_KEY,
+            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+            'Content-Type': 'application/json',
+            'Prefer': 'resolution=merge-duplicates'
+          },
+          body: JSON.stringify({ key, value })
+        });
+      } catch(e) {}
+    }
+
+    async function sbDelete(key) {
+      try {
+        await fetch(
+          `${SUPABASE_URL}/rest/v1/kv_store?key=eq.${encodeURIComponent(key)}`,
+          { method: 'DELETE', headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` } }
+        );
+      } catch(e) {}
+    }
+
+    // Append a student record to an array stored in Supabase
+    async function sbAppendStudent(key, studentData) {
+      try {
+        const existing = await sbGet(key);
+        const arr = existing ? JSON.parse(existing) : [];
+        arr.push(studentData);
+        await sbSet(key, JSON.stringify(arr));
+      } catch(e) {}
+    }
+
+    // =============================================
+    //  APP CONFIG
+    // =============================================
     const API_URL = 'http://localhost:5000/api';
     const photoData = {
       photo1data:null, photo2data:null, photo3data:null, photo4data:null,
@@ -1072,7 +1126,6 @@
     let serverOnline = false;
     let selectedCombo = null;
 
-    // COMBINATION DATA
     const COMBINATIONS = {
       PCB: { name: 'Physics, Chemistry & Biology', subjects: ['Physics','Chemistry','Biology','General Studies','Kiswahili','English','Mathematics','History','Geography','Commerce','Bible Knowledge','Islamic Knowledge','Fine Art','Music','Home Economics'] },
       PAM: { name: 'Physics, Adv. Mathematics & Further Maths', subjects: ['Physics','Advanced Mathematics','Further Mathematics','General Studies','Kiswahili','English','Chemistry','Biology','History','Geography','Commerce','Computer Science'] },
@@ -1080,14 +1133,12 @@
       PMC: { name: 'Physics, Mathematics & Chemistry', subjects: ['Physics','Mathematics','Chemistry','General Studies','Kiswahili','English','Biology','History','Geography','Commerce','Computer Science','Further Mathematics'] }
     };
 
-    // O-Level common subjects
     const OLEVEL_SUBJECTS = [
       'Kiswahili','English Language','Mathematics','Biology','Chemistry','Physics',
       'History','Geography','Commerce','Book Keeping','Computer Studies',
       'Bible Knowledge','Islamic Knowledge','Fine Art','Home Economics','Music','French','Agriculture'
     ];
 
-    // Check server
     async function checkServer() {
       try {
         const r = await fetch(`${API_URL}/status`, { signal: AbortSignal.timeout(3000) });
@@ -1104,7 +1155,6 @@
     }
     checkServer();
 
-    // Build O-Level results table
     function buildResultsTable() {
       const tbody = document.getElementById('resultsTableBody');
       tbody.innerHTML = '';
@@ -1130,7 +1180,6 @@
       return results;
     }
 
-    // Combination selector
     function selectCombo(code) {
       selectedCombo = code;
       document.getElementById('selectedCombo').value = code;
@@ -1140,7 +1189,6 @@
       });
     }
 
-    // Image upload
     function handleImageUpload(event, previewId, dataKey) {
       const file = event.target.files[0];
       if (!file) return;
@@ -1156,7 +1204,6 @@
       reader.readAsDataURL(file);
     }
 
-    // Signature pads
     function initSignaturePad(canvasId) {
       const canvas = document.getElementById(canvasId);
       if (!canvas) return;
@@ -1184,7 +1231,6 @@
     initSignaturePad('studentSigCanvas');
     initSignaturePad('guardianSigCanvas');
 
-    // Live name update
     ['jina1','jina2','jina3'].forEach(id => document.getElementById(id).addEventListener('input', updateNames));
     document.getElementById('mzaziJina').addEventListener('input', updateNames);
     function updateNames() {
@@ -1196,7 +1242,6 @@
       if (el2) el2.textContent = mzazi || '………………………………………';
     }
 
-    // Populate PDF preview
     function populatePDFPreview(d) {
       document.getElementById('pdf-jinaKamili').textContent = `${d.jina1} ${d.jina2||''} ${d.jina3}`.trim();
       document.getElementById('pdf-admNo').textContent = d.admissionNo || '—';
@@ -1226,7 +1271,6 @@
       document.getElementById('pdf-uhusiano').textContent = d.uhusiano;
       document.getElementById('pdf-regDate').textContent = new Date(d.registrationDate).toLocaleDateString('sw-TZ');
 
-      // Results table
       const tbody = document.getElementById('pdf-resultsBody');
       tbody.innerHTML = '';
       (d.results || []).forEach(r => {
@@ -1235,12 +1279,10 @@
         tbody.appendChild(tr);
       });
 
-      // Photo
       const pdfPhoto = document.getElementById('pdf-studentPhoto');
-      if (photoData.photo1data) { pdfPhoto.src = photoData.photo1data; pdfPhoto.style.display = 'block'; } 
+      if (photoData.photo1data) { pdfPhoto.src = photoData.photo1data; pdfPhoto.style.display = 'block'; }
       else { pdfPhoto.style.display = 'none'; }
 
-      // Signatures
       const stuSig = getSignatureDataURL('studentSigCanvas');
       const grdSig = getSignatureDataURL('guardianSigCanvas');
       const ps = document.getElementById('pdf-studentSig');
@@ -1250,7 +1292,6 @@
       const pgl = document.getElementById('pdf-guardianSig-line');
       if (grdSig) { pg.src=grdSig; pg.style.display='block'; pgl.style.display='none'; } else { pg.style.display='none'; pgl.style.display='block'; }
 
-      // Apply PDF layout
       applyLayoutToPdfPreview();
     }
 
@@ -1276,7 +1317,7 @@
       if (imgDataUrl) {
         const imgW=160, imgX=(210-160)/2, imgY=40, imgH=220;
         pdf.setDrawColor(85,60,154); pdf.setLineWidth(0.7); pdf.rect(imgX-2,imgY-2,imgW+4,imgH+4);
-        try { pdf.addImage(imgDataUrl,'JPEG',imgX,imgY,imgW,imgH,undefined,'FAST'); } 
+        try { pdf.addImage(imgDataUrl,'JPEG',imgX,imgY,imgW,imgH,undefined,'FAST'); }
         catch(e) { try { pdf.addImage(imgDataUrl,'PNG',imgX,imgY,imgW,imgH,undefined,'FAST'); } catch(e2){} }
       } else {
         pdf.setFontSize(11); pdf.setTextColor(150,150,150); pdf.text('[ Picha haikupakiwa ]',105,140,{align:'center'}); pdf.setTextColor(0,0,0);
@@ -1301,7 +1342,6 @@
 
       const studentName = [currentStudentData.jina1,currentStudentData.jina2,currentStudentData.jina3].filter(Boolean).join(' ');
 
-      // Parent photos page
       pdf.addPage();
       addPageHeader(pdf, studentName, 'Ukurasa wa 2 – Picha za Wazazi');
       pdf.setFontSize(13); pdf.setFont('helvetica','bold'); pdf.setTextColor(85,60,154);
@@ -1336,7 +1376,6 @@
       pdf.text('Hati hii ni rasmi ya Shule ya Sekondari Tabora Wavulana',105,288,{align:'center'});
       pdf.setTextColor(0,0,0);
 
-      // Birth cert pages
       const certPhotos = [
         {key:'birthCert1data', title:'Cheti cha Kuzaliwa – Mwanafunzi', subtitle:studentName, pageLabel:'Cheti cha Kuzaliwa – Mwanafunzi'},
         {key:'birthCert2data', title:'Cheti cha Kuzaliwa – Baba', subtitle:currentStudentData.babaNjina||'', pageLabel:'Cheti cha Kuzaliwa – Baba'},
@@ -1376,7 +1415,6 @@
     form.addEventListener('submit', async function(e) {
       e.preventDefault();
 
-      // Validate combination
       if (!selectedCombo) {
         document.getElementById('comboError').style.display = 'block';
         document.getElementById('combo-PCB').scrollIntoView({ behavior: 'smooth' });
@@ -1454,12 +1492,11 @@
             successMessage.innerHTML = '<i class="fas fa-check-circle" style="margin-right:8px;"></i>Fomu imehifadhiwa!<br><small><i class="fas fa-exclamation-triangle"></i> Barua pepe haikutumwa. Unaweza kupakua PDF hapa chini.</small>';
           }
         } else {
-          successMessage.innerHTML = '<i class="fas fa-check-circle" style="margin-right:8px;"></i>Fomu imehifadhiwa ndani!<br><small><i class="fas fa-exclamation-triangle"></i> Seva haipo mtandaoni. Pakua PDF hapa chini.</small>';
+          successMessage.innerHTML = '<i class="fas fa-check-circle" style="margin-right:8px;"></i>Fomu imehifadhiwa!<br><small><i class="fas fa-exclamation-triangle"></i> Seva haipo mtandaoni. Pakua PDF hapa chini.</small>';
         }
 
-        const students = JSON.parse(localStorage.getItem('taboraBoys_F5_2026') || '[]');
-        students.push(currentStudentData);
-        localStorage.setItem('taboraBoys_F5_2026', JSON.stringify(students));
+        // Save to Supabase instead of localStorage
+        await sbAppendStudent('taboraBoys_F5_2026', currentStudentData);
 
         submitBtn.classList.remove('loading');
         submitBtn.disabled = false;
@@ -1573,21 +1610,21 @@
       return path;
     }
 
-    function saveAdminChanges() {
+    async function saveAdminChanges() {
       const saved = {};
       document.querySelectorAll('[data-admin-editable="true"]').forEach(el => {
         saved[getElementKey(el)] = el.innerHTML;
       });
       try {
-        localStorage.setItem('adminFormEdits_form5', JSON.stringify(saved));
+        await sbSet('adminFormEdits_form5', JSON.stringify(saved));
         showToast('💾 Mabadiliko yamehifadhiwa!');
       } catch(e) { showToast('⚠️ Hitilafu ya kuhifadhi.', true); }
     }
 
-    function resetAdminChanges() {
+    async function resetAdminChanges() {
       if (!confirm('Una uhakika unataka kurudisha fomu kwenye hali yake ya awali?')) return;
       Object.values(originalContent).forEach(({ el, html }) => el.innerHTML = html);
-      localStorage.removeItem('adminFormEdits_form5');
+      await sbDelete('adminFormEdits_form5');
       showToast('↩️ Fomu imerudishwa kwenye hali ya awali.');
     }
 
@@ -1615,10 +1652,10 @@
       setTimeout(() => { if (toast.parentNode) toast.remove(); }, 3200);
     }
 
-    // Load saved edits
-    (function() {
+    // Load saved admin edits from Supabase on page load
+    (async function() {
       try {
-        const stored = localStorage.getItem('adminFormEdits_form5');
+        const stored = await sbGet('adminFormEdits_form5');
         if (!stored) return;
         const saved = JSON.parse(stored);
         const candidates = document.querySelectorAll('.section-title, .form-group > label, .form-header h1, .form-header h2, .form-header p, .govt-text, .ahadi-box h4, .ahadi-box p, .info-note, .photo-slot label, .photo-slot .photo-caption, .combo-name, .combo-subjects');
@@ -1672,13 +1709,7 @@
       { id: 'pdf-cseeStatus',    label: 'Cheti cha CSEE:' },
     ];
 
-    let pdfLayout = loadPdfLayout();
-
-    function loadPdfLayout() {
-      try {
-        const saved = localStorage.getItem('pdfLayout_form5');
-        if (saved) return JSON.parse(saved);
-      } catch(e) {}
+    function getDefaultPdfLayout() {
       return {
         schoolName: 'SHULE YA SEKONDARI TABORA WAVULANA',
         formTitle: 'FOMU YA KUJIANDIKISHA – KIDATO CHA 5 2026',
@@ -1692,8 +1723,17 @@
       };
     }
 
-    function savePdfLayout() {
-      try { localStorage.setItem('pdfLayout_form5', JSON.stringify(pdfLayout)); } catch(e) {}
+    let pdfLayout = getDefaultPdfLayout();
+
+    async function loadPdfLayout() {
+      try {
+        const saved = await sbGet('pdfLayout_form5');
+        if (saved) { pdfLayout = JSON.parse(saved); applyLayoutToPdfPreview(); }
+      } catch(e) {}
+    }
+
+    async function savePdfLayout() {
+      try { await sbSet('pdfLayout_form5', JSON.stringify(pdfLayout)); } catch(e) {}
     }
 
     function openPdfEditor() {
@@ -1758,7 +1798,7 @@
 
     function closePdfEditor() { document.getElementById('pdfEditorModal').style.display = 'none'; }
 
-    function applyPdfLayout() {
+    async function applyPdfLayout() {
       pdfLayout.schoolName = document.getElementById('pe-schoolName').value;
       pdfLayout.formTitle  = document.getElementById('pe-formTitle').value;
       pdfLayout.contact    = document.getElementById('pe-contact').value;
@@ -1766,7 +1806,7 @@
       pdfLayout.refNo      = document.getElementById('pe-refNo').value;
       pdfLayout.openDate   = document.getElementById('pe-openDate').value;
       pdfLayout.ahadiText  = document.getElementById('pe-ahadiText').value;
-      savePdfLayout();
+      await savePdfLayout();
       applyLayoutToPdfPreview();
       closePdfEditor();
       showToast('✅ Mabadiliko ya PDF yamehifadhiwa!');
@@ -1793,21 +1833,16 @@
       });
     }
 
-    function resetPdfLayout() {
+    async function resetPdfLayout() {
       if (!confirm('Una uhakika unataka kurudisha mipangilio ya PDF kwenye hali ya awali?')) return;
-      localStorage.removeItem('pdfLayout_form5');
-      pdfLayout = loadPdfLayout();
+      await sbDelete('pdfLayout_form5');
+      pdfLayout = getDefaultPdfLayout();
       openPdfEditor();
       showToast('↩️ Mipangilio ya PDF imerudishwa.');
     }
 
-    // Apply saved layout on load
-    (function() {
-      try {
-        const saved = localStorage.getItem('pdfLayout_form5');
-        if (saved) { pdfLayout = JSON.parse(saved); applyLayoutToPdfPreview(); }
-      } catch(e) {}
-    })();
+    // Load PDF layout from Supabase on page load
+    loadPdfLayout();
 
 
     // =============================================
@@ -1819,22 +1854,32 @@
     async function loadRegState() {
       try {
         const r = await fetch(`${API_URL}/registration-status?form=form5`, { signal: AbortSignal.timeout(3000) });
-        if (r.ok) { const data = await r.json(); regState = data; localStorage.setItem(REG_KEY, JSON.stringify(regState)); applyRegState(); return; }
+        if (r.ok) {
+          const data = await r.json();
+          regState = data;
+          await sbSet(REG_KEY, JSON.stringify(regState));
+          applyRegState();
+          return;
+        }
       } catch(e) {}
-      try { const saved = localStorage.getItem(REG_KEY); if (saved) regState = JSON.parse(saved); } catch(e) {}
+      // Fallback: load from Supabase
+      try {
+        const saved = await sbGet(REG_KEY);
+        if (saved) regState = JSON.parse(saved);
+      } catch(e) {}
       applyRegState();
     }
 
     function applyRegState() {
       const banner = document.getElementById('regClosedBanner');
-      const submitBtn = document.getElementById('submitBtn');
+      const submitBtnEl = document.getElementById('submitBtn');
       const pill = document.getElementById('regStatusPill');
       const pillText = document.getElementById('regStatusText');
       const toggleBtn = document.getElementById('regToggleBtn');
       const toggleBtnText = document.getElementById('regToggleBtnText');
       if (regState.open) {
         if (banner) banner.style.display = 'none';
-        if (submitBtn) { submitBtn.disabled = false; submitBtn.style.opacity = '1'; }
+        if (submitBtnEl) { submitBtnEl.disabled = false; submitBtnEl.style.opacity = '1'; }
         if (pill) pill.style.background = '#2f855a';
         if (pillText) pillText.textContent = 'Usajili: Umefunguliwa';
         if (toggleBtn) toggleBtn.style.background = '#c53030';
@@ -1848,7 +1893,7 @@
           deadlineEl.style.display = 'block';
           deadlineEl.textContent = 'Tarehe ya mwisho: ' + new Date(regState.deadline).toLocaleDateString('sw-TZ');
         } else if (deadlineEl) { deadlineEl.style.display = 'none'; }
-        if (submitBtn && !adminLoggedIn) { submitBtn.disabled = true; submitBtn.style.opacity = '0.5'; }
+        if (submitBtnEl && !adminLoggedIn) { submitBtnEl.disabled = true; submitBtnEl.style.opacity = '0.5'; }
         if (pill) pill.style.background = '#c53030';
         if (pillText) pillText.textContent = 'Usajili: Umefungwa';
         if (toggleBtn) toggleBtn.style.background = '#2f855a';
@@ -1890,7 +1935,8 @@
       regState.open = isOpen;
       regState.message = (msgInput ? msgInput.value.trim() : '') || 'Usajili umefungwa.';
       regState.deadline = dlInput ? dlInput.value : '';
-      localStorage.setItem(REG_KEY, JSON.stringify(regState));
+      // Save to Supabase
+      await sbSet(REG_KEY, JSON.stringify(regState));
       applyRegState();
       closeRegControl();
       try {
