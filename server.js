@@ -6,31 +6,26 @@ const path             = require('path');
 const { createClient } = require('@supabase/supabase-js');
 require('dotenv').config();
 
-app.get('/', (req, res) => {
-  // Change 'index.html' below if your main file has a different name
-  res.sendFile(path.join(__dirname, 'index_enhanced.html')); 
-});
-
 const app  = express();
 const PORT = process.env.PORT || 5000;
 
 // Defaults for this project (override via env vars in production)
-const SUPABASE_URL  = process.env.SUPABASE_URL  || 'https://mfkvwcryiclehbrkqthu.supabase.co';
+const SUPABASE_URL  = process.env.SUPABASE_URL  || 'https://mnxnhujvygzkjdihpcde.supabase.co';
 const SUPABASE_KEY  =
   process.env.SUPABASE_SERVICE_ROLE_KEY ||
   process.env.SUPABASE_ANON_KEY;
 if (!SUPABASE_KEY) {
-  throw new Error('Missing SUPABASE key: set SUPABASE_SERVICE_ROLE_KEY (recommended) or SUPABASE_ANON_KEY');
+  throw new Error('Missing SUPABASE key: set SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY');
 }
 const SCHOOL_EMAIL  = process.env.SCHOOL_EMAIL  || 'christiankibona840@gmail.com';
 const SMTP_USER     = process.env.SMTP_USER     || '';
 const SMTP_PASS     = process.env.SMTP_PASS     || '';
-const FRONTEND_URL  = process.env.FRONTEND_URL  || '';
+const FRONTEND_URL  = process.env.FRONTEND_URL  || '*';
 const PDF_BUCKET    = process.env.SUPABASE_PDF_BUCKET || 'registrations';
 const PDF_PREFIX    = process.env.SUPABASE_PDF_PREFIX || 'registrations';
 const SIGNED_TTL    = Math.max(60, parseInt(process.env.SUPABASE_SIGNED_URL_TTL || '3600', 10));
 
-// Email is optional; storage+DB should still work without SMTP.
+// Email is optional — server works fine without SMTP
 const EMAIL_ENABLED = Boolean(SMTP_USER && SMTP_PASS);
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
@@ -38,19 +33,22 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
 });
 console.log('Supabase connected:', SUPABASE_URL);
 
-// CORS — allow Vercel, Railway and localhost
+// CORS
 const ALLOWED = [
   'http://localhost:5500','http://127.0.0.1:5500',
   'http://localhost:3000','http://127.0.0.1:3000',
   'http://localhost:5000',
 ];
-if (FRONTEND_URL) ALLOWED.push(FRONTEND_URL);
+if (FRONTEND_URL && FRONTEND_URL !== '*') ALLOWED.push(FRONTEND_URL);
 
 app.use(cors({
   origin: (origin, cb) => {
     if (!origin) return cb(null, true);
+    if (FRONTEND_URL === '*') return cb(null, true);
     if (origin.endsWith('.vercel.app'))  return cb(null, true);
-    if (origin.endsWith('.railway.app')) return cb(null, true);
+    if (origin.endsWith('.render.com'))  return cb(null, true);
+    if (origin.endsWith('.netlify.app')) return cb(null, true);
+    if (origin.endsWith('.github.io'))   return cb(null, true);
     if (ALLOWED.includes(origin))        return cb(null, true);
     cb(new Error('CORS blocked: ' + origin));
   },
@@ -76,7 +74,7 @@ const transporter = EMAIL_ENABLED
 if (transporter) {
   transporter.verify(err => err
     ? console.error('Email error:', err.message)
-    : console.log('Email ready'));
+    : console.log('Email ready:', SMTP_USER));
 } else {
   console.log('Email disabled: SMTP_USER/SMTP_PASS not set');
 }
@@ -114,7 +112,7 @@ async function dbPage(page, limit) {
   return { rows: data||[], total: count||0 };
 }
 
-// ── Settings in Supabase (replaces local JSON files) ─────────
+// ── Settings in Supabase ─────────────────────────────────────
 async function getSetting(key, fallback = null) {
   const { data } = await supabase.from('settings').select('value').eq('key', key).maybeSingle();
   return data ? data.value : fallback;
@@ -124,16 +122,13 @@ async function setSetting(key, value) {
     .upsert({ key, value, updated_at: new Date().toISOString() }, { onConflict: 'key' });
   if (error) throw new Error(error.message);
 }
-
 async function getJsonSetting(key, fallback) {
   const raw = await getSetting(key, null);
   if (raw == null) return fallback;
   if (typeof raw === 'object') return raw;
   try { return JSON.parse(raw); } catch { return fallback; }
 }
-
 async function setJsonSetting(key, value) {
-  // Keep as JSON string to avoid Supabase column type assumptions.
   await setSetting(key, JSON.stringify(value ?? null));
 }
 
@@ -145,14 +140,13 @@ let regStatus  = { ...DEFAULT_REG };
 let pdfLayouts = { form1: {}, form5: {} };
 
 const SETTINGS_KEYS = {
-  regStatus: 'reg_status',
-  pdfLayouts: 'pdf_layouts',
-  nidaStore: 'nida_store',
+  regStatus:      'reg_status',
+  pdfLayouts:     'pdf_layouts',
+  nidaStore:      'nida_store',
   formEditsForm1: 'form_edits_form1',
   formEditsForm5: 'form_edits_form5',
 };
 
-// Load settings on startup
 (async () => {
   try {
     const rs = await getJsonSetting(SETTINGS_KEYS.regStatus, DEFAULT_REG);
@@ -163,7 +157,7 @@ const SETTINGS_KEYS = {
   } catch(e) { console.warn('Settings load failed:', e.message); }
 })();
 
-// ── Supabase PDF upload ───────────────────────────────────────
+// ── PDF upload ───────────────────────────────────────────────
 async function uploadPdf({ buffer, contentType, fileName, studentId }) {
   const safe = String(fileName||`reg-${Date.now()}.pdf`).replace(/[^\w.\-]+/g,'_');
   const p    = `${PDF_PREFIX}/${studentId||'x'}/${Date.now()}-${safe}`;
@@ -173,17 +167,17 @@ async function uploadPdf({ buffer, contentType, fileName, studentId }) {
   return { ok: true, bucket: PDF_BUCKET, path: data.path };
 }
 
-// ── Email builders ────────────────────────────────────────────
+// ── Email builder ────────────────────────────────────────────
 function row(l,v){ return `<tr><td style="padding:8px 14px;font-weight:600;color:#555;background:#f7f9fc;width:38%;border-bottom:1px solid #eef2f7;">${l}</td><td style="padding:8px 14px;color:#222;border-bottom:1px solid #eef2f7;">${v||'—'}</td></tr>`; }
 function sec(bg,icon,title,rows){ return `<div style="margin-bottom:20px;"><div style="background:${bg};color:white;padding:8px 14px;font-size:13px;font-weight:700;border-radius:6px 6px 0 0;">${icon} ${title}</div><table style="width:100%;border-collapse:collapse;font-size:13px;border:1px solid #dde3ed;border-top:none;">${rows}</table></div>`; }
 
 function buildEmail(d, fullName, date, isForm5) {
-  const bg = isForm5 ? '#553c9a' : '#1a365d';
-  const lbl= isForm5 ? 'Kidato cha 5 2026' : 'Kidato cha Kwanza 2026';
+  const bg   = isForm5 ? '#553c9a' : '#1a365d';
+  const lbl  = isForm5 ? 'Kidato cha 5 2026' : 'Kidato cha Kwanza 2026';
   const combos = {PCB:'Physics, Chemistry & Biology',PAM:'Physics, Adv. Maths & Further Maths',HGL:'History, Geography & Literature',PMC:'Physics, Mathematics & Chemistry'};
-  const extra = isForm5 ? `<div style="background:#e9d8fd;border-radius:8px;padding:10px 14px;margin-bottom:18px;"><strong style="color:#2d1b69;">Mkondo: ${d.combination||'—'}</strong> <span style="color:#553c9a;font-size:12px;">${combos[d.combination]||''}</span></div>` : '';
+  const extra  = isForm5 ? `<div style="background:#e9d8fd;border-radius:8px;padding:10px 14px;margin-bottom:18px;"><strong style="color:#2d1b69;">Mkondo: ${d.combination||'—'}</strong> <span style="color:#553c9a;font-size:12px;">${combos[d.combination]||''}</span></div>` : '';
   const cseeRows = isForm5 ? sec(bg,'📊','MATOKEO YA CSEE', row('Mwaka',d.cseeYear)+row('Daraja',d.cseeDivision?'Division '+d.cseeDivision:'—')+row('Aggregate',d.cseeAggregates||'—')+((d.results||[]).map(r=>row(r.subject,`${r.grade} (${r.points} pts)`)).join('')||row('Matokeo','Hayakuingizwa'))) : '';
-  return `<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body style="margin:0;padding:0;background:#f0f4f8;font-family:'Segoe UI',Arial,sans-serif;"><div style="max-width:650px;margin:24px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,.1);"><div style="background:linear-gradient(135deg,${isForm5?'#2d1b69':' #0d1f3c'},${bg});padding:28px 32px;"><div style="color:white;font-size:17px;font-weight:800;">🏫 SHULE YA SEKONDARI TABORA WAVULANA</div><div style="color:${isForm5?'#e9d8fd':'#f0c84a'};font-size:11px;margin-top:3px;">Usajili Mpya — ${lbl}</div></div><div style="padding:16px 28px;background:${isForm5?'#faf5ff':'#e8f5e9'};border-left:4px solid ${isForm5?'#553c9a':'#2d6a4f'};"><strong>✅ Mwanafunzi Mpya — ${date}</strong></div><div style="padding:24px 28px;">${extra}${sec(bg,'👤','TAARIFA ZA KIBINAFSI',row('Jina Kamili',`<strong>${fullName}</strong>`)+row('Shule Iliyotoka',d.shuleIliyotoka)+row('Uraia',d.uraia)+row('Dini',d.dini)+row('Namba Usajili',d.admissionNo||'—')+row('Mkoa/Wilaya',[d.mkoa,d.wilayaMakazi].filter(Boolean).join(' / ')))}${cseeRows}${sec(bg,'👨‍👩‍👦','FAMILIA',row('Baba',d.babaNjina)+row('Simu ya Baba',d.babaSimu)+row('Mama',d.mamaNjina)+row('Simu ya Mama',d.mamaSimu)+row('Mzazi Mkuu',`${d.mzaziJina||'—'} (${d.uhusiano||'—'})`)+row('Simu Kuu',d.mzaziSimuKuu||d.babaSimu||'—'))}${sec(bg,'🏥','AFYA',row('Kundi la Damu',`<strong>${d.damu||'—'}</strong>`)+row('Bima',d.bima)+row('Magonjwa',d.magonjwa||'Hakuna'))}</div><div style="background:#f7f9fc;padding:16px 28px;text-align:center;font-size:11px;color:#888;"><strong>Shule ya Sekondari Tabora Wavulana</strong> · S.L.P 374, Tabora</div></div></body></html>`;
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body style="margin:0;padding:0;background:#f0f4f8;font-family:Arial,sans-serif;"><div style="max-width:650px;margin:24px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,.1);"><div style="background:linear-gradient(135deg,${isForm5?'#2d1b69':'#0d1f3c'},${bg});padding:28px 32px;"><div style="color:white;font-size:17px;font-weight:800;">🏫 SHULE YA SEKONDARI TABORA WAVULANA</div><div style="color:${isForm5?'#e9d8fd':'#f0c84a'};font-size:11px;margin-top:3px;">Usajili Mpya — ${lbl}</div></div><div style="padding:16px 28px;background:${isForm5?'#faf5ff':'#e8f5e9'};border-left:4px solid ${isForm5?'#553c9a':'#2d6a4f'};"><strong>✅ ${fullName} — ${date}</strong></div><div style="padding:24px 28px;">${extra}${sec(bg,'👤','TAARIFA ZA KIBINAFSI',row('Jina Kamili',`<strong>${fullName}</strong>`)+row('Shule Iliyotoka',d.shuleIliyotoka)+row('Uraia',d.uraia)+row('Dini',d.dini)+row('Namba Usajili',d.admissionNo||'—')+row('Mkoa/Wilaya',[d.mkoa,d.wilayaMakazi].filter(Boolean).join(' / ')))}${cseeRows}${sec(bg,'👨‍👩‍👦','FAMILIA',row('Baba',d.babaNjina)+row('Simu ya Baba',d.babaSimu)+row('Mama',d.mamaNjina)+row('Simu ya Mama',d.mamaSimu))}${sec(bg,'🏥','AFYA',row('Kundi la Damu',`<strong>${d.damu||'—'}</strong>`)+row('Bima',d.bima)+row('Magonjwa',d.magonjwa||'Hakuna'))}</div><div style="background:#f7f9fc;padding:16px 28px;text-align:center;font-size:11px;color:#888;"><strong>Shule ya Sekondari Tabora Wavulana</strong> · S.L.P 374, Tabora</div></div></body></html>`;
 }
 
 // ── ROUTES ────────────────────────────────────────────────────
@@ -198,14 +192,13 @@ app.get('/api/health', async (req, res) => {
 });
 
 app.post('/api/test-email', async (req, res) => {
+  if (!transporter) return res.status(400).json({ success:false, error:'Email haijasanidiwa (SMTP_USER/SMTP_PASS)' });
   try {
-    if (!transporter) return res.status(400).json({ success:false, error:'Email haijasanidiwa (SMTP_USER/SMTP_PASS)' });
     const info = await transporter.sendMail({ from:`"Tabora Boys" <${SMTP_USER}>`, to:SCHOOL_EMAIL, subject:'Test ✅', html:'<p>Mfumo unafanya kazi mtandaoni! 🎉</p>' });
     res.json({ success:true, messageId:info.messageId });
   } catch(e) { res.status(500).json({ success:false, error:e.message }); }
 });
 
-// Single clean register route
 app.post('/api/register', upload.single('pdf'), async (req, res) => {
   const pdfFile = req.file || null;
   let studentId = null;
@@ -249,7 +242,7 @@ app.post('/api/register', upload.single('pdf'), async (req, res) => {
       results_json:   isF5?(d.results||null):null,
       registration_date:date, email_sent:false, raw_json:d
     });
-    console.log(`Saved to Supabase — ID: ${studentId}`);
+    console.log(`Saved — ID: ${studentId}`);
 
     let uploadedPdf = null;
     const attachments = [];
@@ -262,6 +255,12 @@ app.post('/api/register', upload.single('pdf'), async (req, res) => {
       }
     }
 
+    if (!transporter) {
+      console.warn('Email skipped — SMTP not configured');
+      res.json({ success:true, message:'Umehifadhiwa mtandaoni! (Barua pepe haikutumwa)', studentId, emailSent:false, pdfStored:uploadedPdf?.ok?{bucket:uploadedPdf.bucket,path:uploadedPdf.path}:null });
+      return;
+    }
+
     const info = await transporter.sendMail({
       from:`"Tabora Boys Registration" <${SMTP_USER}>`,
       to:SCHOOL_EMAIL,
@@ -271,8 +270,8 @@ app.post('/api/register', upload.single('pdf'), async (req, res) => {
     });
     await dbUpdate(studentId, { email_sent:true, email_message_id:info.messageId });
     console.log(`Done — ID:${studentId}`);
-
     res.json({ success:true, message:'Umehifadhiwa mtandaoni!', studentId, emailSent:true, pdfStored:uploadedPdf?.ok?{bucket:uploadedPdf.bucket,path:uploadedPdf.path}:null });
+
   } catch(err) {
     console.error('Register error:', err.message);
     res.status(500).json({ success:false, error:err.message, studentId });
@@ -286,7 +285,7 @@ app.get('/api/admin/students', async (req,res) => {
 });
 
 app.get('/api/admin/students/:id', async (req,res) => {
-  try { const row=await dbGetById(req.params.id); if(!row)return res.status(404).json({success:false,error:'Hapatikani'}); res.json({success:true,data:row}); }
+  try { const r=await dbGetById(req.params.id); if(!r)return res.status(404).json({success:false,error:'Hapatikani'}); res.json({success:true,data:r}); }
   catch(e){ res.status(500).json({success:false,error:e.message}); }
 });
 
@@ -341,12 +340,12 @@ app.delete('/api/admin/students/:id', async (req,res) => {
 
 app.get('/api/admin/students/:id/pdf', async (req,res) => {
   try {
-    const row=await dbGetById(req.params.id);
-    if(!row)return res.status(404).json({success:false,error:'Hapatikani'});
-    if(!row.pdf_filename)return res.status(404).json({success:false,error:'Hakuna PDF'});
-    const {data,error}=await supabase.storage.from(PDF_BUCKET).createSignedUrl(row.pdf_filename,SIGNED_TTL);
+    const r=await dbGetById(req.params.id);
+    if(!r)return res.status(404).json({success:false,error:'Hapatikani'});
+    if(!r.pdf_filename)return res.status(404).json({success:false,error:'Hakuna PDF'});
+    const {data,error}=await supabase.storage.from(PDF_BUCKET).createSignedUrl(r.pdf_filename,SIGNED_TTL);
     if(error||!data?.signedUrl)return res.status(500).json({success:false,error:error?.message});
-    res.json({success:true,signedUrl:data.signedUrl,name:row.full_name});
+    res.json({success:true,signedUrl:data.signedUrl,name:r.full_name});
   } catch(e){ res.status(500).json({success:false,error:e.message}); }
 });
 
@@ -374,17 +373,14 @@ app.post('/api/pdf-layout', async (req,res) => {
   catch(e){ res.status(500).json({success:false,error:e.message}); }
 });
 
-// ── NIDA store (online duplicate checking) ──────────────────────
 app.get('/api/nida/exists', async (req,res) => {
   const nida = normalizeNida(req.query.nida);
   if (!nida) return res.status(400).json({ success:false, error:'nida inahitajika' });
   try {
     const store = await getJsonSetting(SETTINGS_KEYS.nidaStore, { nidas: [] });
-    const list = Array.isArray(store?.nidas) ? store.nidas : [];
+    const list  = Array.isArray(store?.nidas) ? store.nidas : [];
     res.json({ success:true, nida, exists: list.includes(nida) });
-  } catch(e) {
-    res.status(500).json({ success:false, error:e.message });
-  }
+  } catch(e) { res.status(500).json({ success:false, error:e.message }); }
 });
 
 app.post('/api/nida', async (req,res) => {
@@ -392,39 +388,32 @@ app.post('/api/nida', async (req,res) => {
   if (!nida) return res.status(400).json({ success:false, error:'nida inahitajika' });
   try {
     const store = await getJsonSetting(SETTINGS_KEYS.nidaStore, { nidas: [] });
-    const list = Array.isArray(store?.nidas) ? store.nidas : [];
+    const list  = Array.isArray(store?.nidas) ? store.nidas : [];
     if (!list.includes(nida)) list.push(nida);
     await setJsonSetting(SETTINGS_KEYS.nidaStore, { nidas: list });
     res.json({ success:true, nida, stored:true });
-  } catch(e) {
-    res.status(500).json({ success:false, error:e.message });
-  }
+  } catch(e) { res.status(500).json({ success:false, error:e.message }); }
 });
 
-// ── Admin: form edits persistence ───────────────────────────────
 app.get('/api/admin/form-edits', async (req,res) => {
   const form = req.query.form === 'form5' ? 'form5' : 'form1';
   const key  = form === 'form5' ? SETTINGS_KEYS.formEditsForm5 : SETTINGS_KEYS.formEditsForm1;
   try {
     const edits = await getJsonSetting(key, {});
     res.json({ success:true, form, edits: edits && typeof edits === 'object' ? edits : {} });
-  } catch(e) {
-    res.status(500).json({ success:false, error:e.message });
-  }
+  } catch(e) { res.status(500).json({ success:false, error:e.message }); }
 });
 
 app.post('/api/admin/form-edits', async (req,res) => {
-  const form = req.body?.form === 'form5' ? 'form5' : 'form1';
-  const key  = form === 'form5' ? SETTINGS_KEYS.formEditsForm5 : SETTINGS_KEYS.formEditsForm1;
+  const form  = req.body?.form === 'form5' ? 'form5' : 'form1';
+  const key   = form === 'form5' ? SETTINGS_KEYS.formEditsForm5 : SETTINGS_KEYS.formEditsForm1;
   const edits = req.body?.edits;
   if (!edits || typeof edits !== 'object') return res.status(400).json({ success:false, error:'edits lazima iwe object' });
   try {
     await setJsonSetting(key, edits);
     res.json({ success:true, form });
-  } catch(e) {
-    res.status(500).json({ success:false, error:e.message });
-  }
+  } catch(e) { res.status(500).json({ success:false, error:e.message }); }
 });
 
-app.listen(PORT, () => console.log(`Server running on port ${PORT} | DB: Supabase`));
+app.listen(PORT, () => console.log(`\n✅ Server running on port ${PORT} | DB: Supabase | Email: ${EMAIL_ENABLED ? 'enabled' : 'disabled'}\n`));
 module.exports = app;
