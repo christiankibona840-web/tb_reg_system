@@ -169,18 +169,23 @@ async function uploadPdf({ buffer, contentType, fileName, studentId }) {
 
 // ── Email builder ────────────────────────────────────────────
 function row(l,v){ return `<tr><td style="padding:8px 14px;font-weight:600;color:#555;background:#f7f9fc;width:38%;border-bottom:1px solid #eef2f7;">${l}</td><td style="padding:8px 14px;color:#222;border-bottom:1px solid #eef2f7;">${v||'—'}</td></tr>`; }
-function sec(bg,icon,title,rows){ return `<div style="margin-bottom:20px;"><div style="background:${bg};color:white;padding:8px 14px;font-size:13px;font-weight:700;border-radius:6px 6px 0 0;">${icon} ${title}</div><table style="width:100%;border-collapse:collapse;font-size:13px;border:1px solid #dde3ed;border-top:none;">${rows}</table></div>`; }
+function sec(bg,icon,title,rows){ return `<div style="margin-bottom:20px;"><div style="background:${bg};color:white;padding:8px 14px;font-size:13px;font-weight:700;border-radius:6px 6px 0 0;">${icon} ${title}</div><table style="width:100%;border-collapse:collapse;background:white;border-radius:0 0 6px 6px;">${rows}</table></div>`; }
 
 function buildEmail(d, fullName, date, isForm5) {
   const bg   = isForm5 ? '#553c9a' : '#1a365d';
   const lbl  = isForm5 ? 'Kidato cha 5 2026' : 'Kidato cha Kwanza 2026';
   const combos = {PCB:'Physics, Chemistry & Biology',PAM:'Physics, Adv. Maths & Further Maths',HGL:'History, Geography & Literature',PMC:'Physics, Mathematics & Chemistry'};
-  const extra  = isForm5 ? `<div style="background:#e9d8fd;border-radius:8px;padding:10px 14px;margin-bottom:18px;"><strong style="color:#2d1b69;">Mkondo: ${d.combination||'—'}</strong> <span style="color:#553c9a;font-size:12px;">${combos[d.combination]||''}</span></div>` : '';
-  const cseeRows = isForm5 ? sec(bg,'📊','MATOKEO YA CSEE', row('Mwaka',d.cseeYear)+row('Daraja',d.cseeDivision?'Division '+d.cseeDivision:'—')+row('Aggregate',d.cseeAggregates||'—')+((d.results||[]).map(r=>row(r.subject,`${r.grade} (${r.points} pts)`)).join('')||row('Matokeo','Hayakuingizwa'))) : '';
-  return `<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body style="margin:0;padding:0;background:#f0f4f8;font-family:Arial,sans-serif;"><div style="max-width:650px;margin:24px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,.1);"><div style="background:linear-gradient(135deg,${isForm5?'#2d1b69':'#0d1f3c'},${bg});padding:28px 32px;"><div style="color:white;font-size:17px;font-weight:800;">🏫 SHULE YA SEKONDARI TABORA WAVULANA</div><div style="color:${isForm5?'#e9d8fd':'#f0c84a'};font-size:11px;margin-top:3px;">Usajili Mpya — ${lbl}</div></div><div style="padding:16px 28px;background:${isForm5?'#faf5ff':'#e8f5e9'};border-left:4px solid ${isForm5?'#553c9a':'#2d6a4f'};"><strong>✅ ${fullName} — ${date}</strong></div><div style="padding:24px 28px;">${extra}${sec(bg,'👤','TAARIFA ZA KIBINAFSI',row('Jina Kamili',`<strong>${fullName}</strong>`)+row('Shule Iliyotoka',d.shuleIliyotoka)+row('Uraia',d.uraia)+row('Dini',d.dini)+row('Namba Usajili',d.admissionNo||'—')+row('Mkoa/Wilaya',[d.mkoa,d.wilayaMakazi].filter(Boolean).join(' / ')))}${cseeRows}${sec(bg,'👨‍👩‍👦','FAMILIA',row('Baba',d.babaNjina)+row('Simu ya Baba',d.babaSimu)+row('Mama',d.mamaNjina)+row('Simu ya Mama',d.mamaSimu))}${sec(bg,'🏥','AFYA',row('Kundi la Damu',`<strong>${d.damu||'—'}</strong>`)+row('Bima',d.bima)+row('Magonjwa',d.magonjwa||'Hakuna'))}</div><div style="background:#f7f9fc;padding:16px 28px;text-align:center;font-size:11px;color:#888;"><strong>Shule ya Sekondari Tabora Wavulana</strong> · S.L.P 374, Tabora</div></div></body></html>`;
+  const extra  = isForm5 ? `<div style="background:#e9d8fd;border-radius:8px;padding:10px 14px;margin-bottom:18px;"><strong style="color:#2d1b69;">Mkondo: ${d.combination||'—'}</strong> <span style="color:#666;font-size:12px;">${combos[d.combination]||''}</span></div>` : '';
+  const cseeRows = isForm5 ? sec(bg,'📊','MATOKEO YA CSEE', row('Mwaka',d.cseeYear)+row('Daraja',d.cseeDivision?'Division '+d.cseeDivision:'—')+row('Aggregate',d.cseeAggregates||'—')+((d.results||[]).map((r,i)=>`${i?'':sec(bg,'📋','MATOKEO YA SOMO','')}${row(r.subject,r.grade)}`).join('')||'')) : '';
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body style="margin:0;padding:0;background:#f0f4f8;font-family:Arial,sans-serif;"><div style="max-width:650px;margin:24px auto;background:white;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.1);"><div style="background:linear-gradient(135deg,${bg} 0%,${bg}dd 100%);color:white;padding:24px;text-align:center;"><h1 style="margin:0 0 8px;font-size:28px;">🎓 ${lbl}</h1><p style="margin:0;font-size:14px;opacity:0.9;">Usajili Umehifadhiwa</p></div><div style="padding:24px;"><h2 style="color:#222;margin-top:0;">Habari, ${fullName}!</h2><p style="color:#555;">Asante kwa kujiandikisha kwa ${lbl}. Chuo kilichojiandikisha ni <strong>Tabora Boys School</strong>.</p>${extra}<div style="background:#f0f4f8;border-left:4px solid ${bg};padding:12px 14px;margin-bottom:18px;border-radius:4px;"><strong style="color:${bg};">📝 Maelezo Yako</strong></div><table style="width:100%;border-collapse:collapse;margin-bottom:20px;">${row('Jina Kamili',fullName)+row('Nambari ya Admission',d.admissionNo)+row('Darasa',d.formLevel==='form5'?'Kidato cha 5':'Kidato cha Kwanza')+row('Ushule Uliotoka',d.shuleIliyotoka)+row('Wilaya ya Kaeni',d.wilayaMakazi)+row('Jinsia',d.jinsia)+row('Damu',d.damu)+row('Simu ya Mzazi',d.mzaziSimuKuu)+row('Tarehe',date)}</table>${cseeRows}<div style="background:#e8f5e9;border-radius:8px;padding:12px 14px;margin-bottom:18px;"><p style="margin:0;color:#2e7d32;font-size:13px;"><strong>✅ Waliandikishwa: </strong>Kumbuka kuwa umaliandikisha na tumeokoka ujumbe huu. Mkutano wa kusanyika utakuja katika dakika 24.</p></div><hr style="border:none;border-top:1px solid #eef2f7;margin:20px 0;"><p style="color:#999;font-size:12px;text-align:center;margin:0;">© 2026 Tabora Boys School. Haki zote zimehifadhiwa.</p></div></body></html>`;
 }
 
 // ── ROUTES ────────────────────────────────────────────────────
+app.get('/', (req, res) => {
+  // Serve the main HTML file
+  res.sendFile(path.join(__dirname, 'index_enhanced.html')); 
+});
+
 app.get('/api/status', async (req, res) => {
   try { res.json({ status:'ok', total: await dbCount(), regStatus, db:'supabase' }); }
   catch(e) { res.status(500).json({ status:'error', error:e.message }); }
@@ -292,7 +297,7 @@ app.get('/api/admin/students/:id', async (req,res) => {
 app.get('/api/admin/search', async (req,res) => {
   const q=(req.query.q||'').trim(); if(!q)return res.json({success:true,count:0,data:[]});
   try {
-    const {data,error}=await supabase.from('students').select('id,created_at,full_name,admission_no,form_level,combination,shule_iliyotoka,email_sent').or(`full_name.ilike.%${q}%,admission_no.ilike.%${q}%,shule_iliyotoka.ilike.%${q}%`).order('id',{ascending:false}).limit(50);
+    const {data,error}=await supabase.from('students').select('id,created_at,full_name,admission_no,form_level,combination,shule_iliyotoka,email_sent').or(`full_name.ilike.%${q}%,admission_no.ilike.%${q}%`);
     if(error)throw new Error(error.message);
     res.json({success:true,count:(data||[]).length,data:data||[]});
   } catch(e){ res.status(500).json({success:false,error:e.message}); }
