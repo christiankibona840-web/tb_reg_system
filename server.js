@@ -6,6 +6,11 @@ const path             = require('path');
 const { createClient } = require('@supabase/supabase-js');
 require('dotenv').config();
 
+app.get('/', (req, res) => {
+  // Change 'index.html' below if your main file has a different name
+  res.sendFile(path.join(__dirname, 'index_enhanced.html')); 
+});
+
 const app  = express();
 const PORT = process.env.PORT || 5000;
 
