@@ -1083,6 +1083,7 @@
   }
   .rco-badge::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: #fc8181; animation: pulse 1.5s infinite; }
 </style>
+<script src="config.js"></script>
 </head>
 <body>
 
@@ -1566,25 +1567,35 @@
 })();
 
 // ─────────────────────────────
-//  DUPLICATE CHECK (localStorage-based; replace with server in production)
+//  DUPLICATE CHECK (online; Supabase-backed via server)
 // ─────────────────────────────
-const STORE_KEY = 'tbss_2026_nidas';
+const API_URL = `${(window.APP_CONFIG?.API_BASE || '').replace(/\/+$/,'')}/api`;
 
-function getStore() {
-  try { return JSON.parse(localStorage.getItem(STORE_KEY) || '[]'); }
-  catch { return []; }
+function normalizeNida(nida) {
+  return String(nida || '').replace(/\s+/g,'').toUpperCase();
 }
 
-
-
-function saveNida(nida) {
-  const s = getStore();
-  s.push(nida.replace(/\s/g,'').toUpperCase());
-  try { localStorage.setItem(STORE_KEY, JSON.stringify(s)); } catch {}
+async function alreadyExists(nida) {
+  const n = normalizeNida(nida);
+  if (!n) return false;
+  try {
+    const r = await fetch(`${API_URL}/nida/exists?nida=${encodeURIComponent(n)}`, { signal: AbortSignal.timeout(3500) });
+    if (!r.ok) return false;
+    const data = await r.json();
+    return data && data.exists === true;
+  } catch(e) { return false; }
 }
 
-function alreadyExists(nida) {
-  return getStore().includes(nida.replace(/\s/g,'').toUpperCase());
+async function saveNida(nida) {
+  const n = normalizeNida(nida);
+  if (!n) return;
+  try {
+    await fetch(`${API_URL}/nida`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nida: n })
+    });
+  } catch(e) {}
 }
 
 // ─────────────────────────────
@@ -1653,7 +1664,7 @@ function closeDup() {
 // ─────────────────────────────
 //  SUBMIT
 // ─────────────────────────────
-function submitForm() {
+async function submitForm() {
   // Consent check
   if (!document.getElementById('chk-consent').checked) {
     const cl = document.querySelector('.consent-label');
@@ -1703,13 +1714,13 @@ function submitForm() {
   }
 
   // DUPLICATE CHECK
-  if (alreadyExists(nida)) {
+  if (await alreadyExists(nida)) {
     showDup(nida);
     return;
   }
 
   // All good — persist + go to success
-  saveNida(nida);
+  await saveNida(nida);
   const ref = 'TBSS-' + new Date().getFullYear() + '-' + Math.floor(100000 + Math.random() * 900000);
   document.getElementById('refnum').textContent = ref;
   goTo(6);

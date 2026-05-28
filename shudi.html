@@ -1206,9 +1206,10 @@
     </div>
   </div>
 
+  <script src="config.js"></script>
   <script>
     // === Configuration ===
-    const API_URL = 'http://localhost:5000/api';
+    const API_URL = `${(window.APP_CONFIG?.API_BASE || '').replace(/\/+$/,'')}/api`;
     const photoData = {
       photo1data: null, photo2data: null, photo3data: null, photo4data: null,
       birthCert1data: null, birthCert2data: null, birthCert3data: null, birthCert4data: null
@@ -1712,6 +1713,11 @@
             const result = await sendToServer(currentStudentData, pdfBlob);
             if (result.success) {
               successMessage.innerHTML = '<i class="fas fa-check-circle" style="margin-right:8px;"></i>Umefanikiwa kujiandikisha!<br><small><i class="fas fa-envelope"></i> PDF imetumwa kwa barua pepe ya shule: Uutawalataboraschool@gmail.com</small>';
+              // Send to records page (online record)
+              if (result.studentId) {
+                try { sessionStorage.setItem('lastStudentId', String(result.studentId)); } catch(e) {}
+                setTimeout(() => { window.location.href = `records.html?id=${encodeURIComponent(result.studentId)}`; }, 600);
+              }
             }
           } catch (error) {
             successMessage.innerHTML = '<i class="fas fa-check-circle" style="margin-right:8px;"></i>Fomu imehifadhiwa!<br><small><i class="fas fa-exclamation-triangle"></i> Barua pepe haikutumwa. Unaweza kupakua PDF hapa chini.</small>';
@@ -1720,9 +1726,7 @@
           successMessage.innerHTML = '<i class="fas fa-check-circle" style="margin-right:8px;"></i>Fomu imehifadhiwa ndani!<br><small><i class="fas fa-exclamation-triangle"></i> Seva haipo mtandaoni. Pakua PDF hapa chini.</small>';
         }
 
-        const students = JSON.parse(localStorage.getItem('taboraBoys2026') || '[]');
-        students.push(currentStudentData);
-        localStorage.setItem('taboraBoys2026', JSON.stringify(students));
+        // Saved online via server (/api/register). No localStorage persistence.
 
         submitBtn.classList.remove('loading');
         submitBtn.disabled = false;
@@ -1884,8 +1888,8 @@
       return path;
     }
 
-    function saveAdminChanges() {
-      // Collect all current edited content and save to localStorage
+    async function saveAdminChanges() {
+      // Collect all current edited content and persist to server (Supabase-backed)
       const saved = {};
       document.querySelectorAll('[data-admin-editable="true"]').forEach(el => {
         const key = getElementKey(el);
@@ -1893,21 +1897,32 @@
       });
 
       try {
-        localStorage.setItem('adminFormEdits', JSON.stringify(saved));
-        showToast('💾 Mabadiliko yamehifadhiwa kikamilifu!');
+        const r = await fetch(`${API_URL}/admin/form-edits`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ form: 'form1', edits: saved })
+        });
+        if (!r.ok) throw new Error('save_failed');
+        showToast('💾 Mabadiliko yamehifadhiwa mtandaoni!');
       } catch(e) {
-        showToast('⚠️ Hitilafu ya kuhifadhi. Jaribu tena.', true);
+        showToast('⚠️ Hitilafu ya kuhifadhi mtandaoni. Jaribu tena.', true);
       }
     }
 
-    function resetAdminChanges() {
+    async function resetAdminChanges() {
       if (!confirm('Una uhakika unataka kurudisha fomu kwenye hali yake ya awali?')) return;
       // Restore original HTML
       Object.values(originalContent).forEach(({ el, html }) => {
         el.innerHTML = html;
       });
-      // Clear saved edits
-      localStorage.removeItem('adminFormEdits');
+      // Clear saved edits online
+      try {
+        await fetch(`${API_URL}/admin/form-edits`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ form: 'form1', edits: {} })
+        });
+      } catch(e) {}
       showToast('↩️ Fomu imerudishwa kwenye hali ya awali.');
     }
 
@@ -1936,17 +1951,14 @@
       setTimeout(() => { if (toast.parentNode) toast.remove(); }, 3200);
     }
 
-    // Load saved edits on page load (apply previously saved admin changes)
-    (function applyStoredEdits() {
+    // Load saved edits on page load (Supabase-backed via server)
+    (async function applyStoredEdits() {
       try {
-        const stored = localStorage.getItem('adminFormEdits');
-        if (!stored) return;
-        const saved = JSON.parse(stored);
+        const r = await fetch(`${API_URL}/admin/form-edits?form=form1`, { signal: AbortSignal.timeout(4000) });
+        if (!r.ok) return;
+        const payload = await r.json();
+        const saved = payload?.edits || {};
 
-        // We need to wait for DOM then apply
-        document.addEventListener('DOMContentLoaded', function() {}, { once: true });
-
-        // Map elements by their key and apply saved HTML
         const candidates = document.querySelectorAll(
           '.section-title, .form-group > label, .form-header h1, .form-header h2, ' +
           '.form-header p, .govt-text, .ahadi-box h4, .ahadi-box p, ' +
@@ -1957,9 +1969,7 @@
         candidates.forEach(el => {
           if (el.querySelector('input, select, textarea, canvas, button')) return;
           const key = getElementKey(el);
-          if (saved[key] !== undefined) {
-            el.innerHTML = saved[key];
-          }
+          if (saved[key] !== undefined) el.innerHTML = saved[key];
         });
       } catch(e) {}
     })();
@@ -2009,14 +2019,7 @@
       { id: 'pdf-fomuD',         label: 'Fomu D ya Hospitali:' },
     ];
 
-    let pdfLayout = loadPdfLayout();
-
-    function loadPdfLayout() {
-      try {
-        const saved = localStorage.getItem('pdfLayout_form1');
-        if (saved) return JSON.parse(saved);
-      } catch(e) {}
-      return {
+    let pdfLayout = {
         schoolName: 'SHULE YA SEKONDARI TABORA WAVULANA',
         formTitle: 'FOMU YA KUJIANDIKISHA – KIDATO CHA KWANZA 2026',
         contact: 'S.L.P 374, Tabora | Simu: 0755297005 | Uutawalataboraschool@gmail.com',
@@ -2027,10 +2030,28 @@
         sections: JSON.parse(JSON.stringify(PDF_SECTIONS_DEFAULT)),
         fields: JSON.parse(JSON.stringify(PDF_FIELDS_DEFAULT)),
       };
+
+    async function loadPdfLayoutFromServer() {
+      try {
+        const r = await fetch(`${API_URL}/pdf-layout?form=form1`, { signal: AbortSignal.timeout(4000) });
+        if (!r.ok) return;
+        const remote = await r.json();
+        if (remote && typeof remote === 'object' && Object.keys(remote).length) {
+          // Merge to keep defaults for any missing fields
+          pdfLayout = { ...pdfLayout, ...remote };
+          applyLayoutToPdfPreview();
+        }
+      } catch(e) {}
     }
 
-    function savePdfLayout() {
-      try { localStorage.setItem('pdfLayout_form1', JSON.stringify(pdfLayout)); } catch(e) {}
+    async function savePdfLayoutToServer() {
+      try {
+        await fetch(`${API_URL}/pdf-layout`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ form: 'form1', layout: pdfLayout })
+        });
+      } catch(e) {}
     }
 
     function openPdfEditor() {
@@ -2123,7 +2144,7 @@
       pdfLayout.refNo      = document.getElementById('pe-refNo').value;
       pdfLayout.openDate   = document.getElementById('pe-openDate').value;
       pdfLayout.ahadiText  = document.getElementById('pe-ahadiText').value;
-      savePdfLayout();
+      savePdfLayoutToServer();
       applyLayoutToPdfPreview();
       closePdfEditor();
       showToast('✅ Mabadiliko ya PDF yamehifadhiwa! PDF ijayo itatumia mipangilio hii.');
@@ -2161,19 +2182,24 @@
 
     function resetPdfLayout() {
       if (!confirm('Una uhakika unataka kurudisha mipangilio ya PDF kwenye hali ya awali?')) return;
-      localStorage.removeItem('pdfLayout_form1');
-      pdfLayout = loadPdfLayout();
+      pdfLayout = {
+        schoolName: 'SHULE YA SEKONDARI TABORA WAVULANA',
+        formTitle: 'FOMU YA KUJIANDIKISHA – KIDATO CHA KWANZA 2026',
+        contact: 'S.L.P 374, Tabora | Simu: 0755297005 | Uutawalataboraschool@gmail.com',
+        govtText: 'Jamhuri ya Muungano wa Tanzania • TAMISEMI • Halmashauri ya Manispaa ya Tabora',
+        refNo: 'Kumb. Na. F.I/2025/1',
+        openDate: 'Shule itafunguliwa 13 Januari 2026 – Lazima ufike kabla ya saa 12:00 jioni',
+        ahadiText: 'Mimi [Jina la Mzazi] ([Uhusiano]) nakubali na maagizo yote ya shule. Naahidi mwanagu akienda tofauti afukuzwe shule.',
+        sections: JSON.parse(JSON.stringify(PDF_SECTIONS_DEFAULT)),
+        fields: JSON.parse(JSON.stringify(PDF_FIELDS_DEFAULT)),
+      };
+      savePdfLayoutToServer();
       openPdfEditor();
       showToast('↩️ Mipangilio ya PDF imerudishwa.');
     }
 
     // Apply saved layout on page load
-    (function() {
-      try {
-        const saved = localStorage.getItem('pdfLayout_form1');
-        if (saved) { pdfLayout = JSON.parse(saved); applyLayoutToPdfPreview(); }
-      } catch(e) {}
-    })();
+    loadPdfLayoutFromServer();
 
 
     // =============================================

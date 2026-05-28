@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: tbss-reg-system
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SUPABASE_URL
+        value: https://mfkvwcryiclehbrkqthu.supabase.co
+      - key: SUPABASE_PDF_BUCKET
+        value: registrations
+      - key: SUPABASE_PDF_PREFIX
+        value: registrations
+      - key: SUPABASE_SIGNED_URL_TTL
+        value: "3600"
+      # Set one of the following in Render dashboard (keep secret):
+      # - SUPABASE_SERVICE_ROLE_KEY (recommended)
+      # - or SUPABASE_ANON_KEY (not recommended for admin/write operations)
+      #
+      # Optional email sending (keep secret):
+      # - SMTP_USER, SMTP_PASS, SMTP_SERVICE, SCHOOL_EMAIL
+

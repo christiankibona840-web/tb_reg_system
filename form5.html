@@ -317,6 +317,7 @@
       .pdf-editor-body { grid-template-columns: 1fr; }
     }
   </style>
+  <script src="config.js"></script>
 </head>
 <body>
   <div class="container">
@@ -1117,7 +1118,7 @@
     // =============================================
     //  APP CONFIG
     // =============================================
-    const API_URL = 'http://localhost:5000/api';
+    const API_URL = `${(window.APP_CONFIG?.API_BASE || '').replace(/\/+$/,'')}/api`;
     const photoData = {
       photo1data:null, photo2data:null, photo3data:null, photo4data:null,
       birthCert1data:null, birthCert2data:null, birthCert3data:null, birthCert4data:null

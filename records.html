@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="sw">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Records — Tabora Boys</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root{
+      --primary:#1a365d; --accent:#d69e2e; --bg:#f0f4f8; --card:#fff; --border:#dde3ed;
+      --text:#1a1a2e; --muted:#667085; --danger:#c0392b;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;font-family:Inter,system-ui,Segoe UI,Arial,sans-serif;background:var(--bg);color:var(--text)}
+    header{background:linear-gradient(135deg,#0d1f3c,#1a365d);color:#fff;padding:18px 20px}
+    header .top{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+    header h1{margin:0;font-size:16px;font-weight:800}
+    header p{margin:2px 0 0;color:#f0c84a;font-size:12px}
+    .wrap{max-width:980px;margin:18px auto;padding:0 16px}
+    .card{background:var(--card);border:1px solid var(--border);border-radius:14px;box-shadow:0 8px 26px rgba(0,0,0,.06);overflow:hidden}
+    .card-h{padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+    .pill{display:inline-flex;align-items:center;gap:8px;border-radius:999px;padding:7px 10px;font-size:12px;font-weight:700;background:#fff7e6;border:1px solid rgba(214,158,46,.35);color:#8a5a00}
+    .btn{appearance:none;border:1px solid var(--border);background:#fff;border-radius:10px;padding:9px 12px;font-weight:700;cursor:pointer}
+    .btn-primary{background:var(--primary);border-color:var(--primary);color:#fff}
+    .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;padding:16px}
+    @media (max-width:720px){.grid{grid-template-columns:1fr}}
+    .item{border:1px solid var(--border);border-radius:12px;padding:12px}
+    .k{font-size:12px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.4px}
+    .v{margin-top:6px;font-size:14px;font-weight:700}
+    .msg{padding:18px 16px;color:var(--muted)}
+    .err{color:var(--danger);font-weight:800}
+  </style>
+</head>
+<body>
+  <header>
+    <div class="top">
+      <div>
+        <h1>📄 Rekodi ya Usajili</h1>
+        <p>Inasomwa moja kwa moja kutoka Supabase</p>
+      </div>
+      <div style="margin-left:auto;display:flex;gap:10px;flex-wrap:wrap">
+        <a class="btn btn-primary" href="admin.html">Fungua Admin</a>
+        <button class="btn" onclick="reload()">Sasisha</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="wrap">
+    <div class="card">
+      <div class="card-h">
+        <div class="pill" id="pill">⏳ Inapakia...</div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <a class="btn" id="pdfBtn" href="#" style="display:none" target="_blank" rel="noopener">Pakua PDF</a>
+        </div>
+      </div>
+      <div id="content" class="msg">Inapakia rekodi...</div>
+    </div>
+  </div>
+
+  <script>
+    const API = '/api';
+
+    function getId() {
+      const u = new URL(window.location.href);
+      const id = u.searchParams.get('id');
+      if (id) return id;
+      try { return sessionStorage.getItem('lastStudentId'); } catch(e) { return null; }
+    }
+
+    function kv(k, v) {
+      const div = document.createElement('div');
+      div.className = 'item';
+      div.innerHTML = `<div class="k">${k}</div><div class="v">${(v==null||v==='')?'—':String(v)}</div>`;
+      return div;
+    }
+
+    async function load() {
+      const id = getId();
+      const pill = document.getElementById('pill');
+      const content = document.getElementById('content');
+      const pdfBtn = document.getElementById('pdfBtn');
+
+      if (!id) {
+        pill.textContent = '⚠️ Hakuna ID';
+        content.innerHTML = 'Hakuna `id`. Rudi kwenye fomu uwasilishe tena, au fungua `admin.html` kuona orodha ya rekodi.';
+        return;
+      }
+
+      pill.textContent = `🔎 Inatafuta ID ${id}...`;
+      content.className = 'msg';
+      content.textContent = 'Inapakia...';
+      pdfBtn.style.display = 'none';
+
+      try {
+        const r = await fetch(`${API}/admin/students/${encodeURIComponent(id)}`);
+        const j = await r.json();
+        if (!r.ok || !j.success) throw new Error(j.error || 'Imeshindikana kupata rekodi');
+        const d = j.data;
+
+        pill.textContent = `✅ Imepatikana — ID ${d.id}`;
+        content.className = 'grid';
+        content.innerHTML = '';
+        content.appendChild(kv('Jina kamili', d.full_name));
+        content.appendChild(kv('Admission No', d.admission_no));
+        content.appendChild(kv('Form level', d.form_level));
+        content.appendChild(kv('Mkondo', d.combination));
+        content.appendChild(kv('Shule aliyotoka', d.shule_iliyotoka));
+        content.appendChild(kv('Simu ya mzazi', d.mzazi_simu_kuu));
+        content.appendChild(kv('Damu', d.damu));
+        content.appendChild(kv('Email sent', d.email_sent ? 'Ndiyo' : 'Hapana'));
+        content.appendChild(kv('Registration date', d.registration_date || d.created_at));
+
+        // PDF link (if stored)
+        try {
+          const pr = await fetch(`${API}/admin/students/${encodeURIComponent(id)}/pdf`);
+          const pj = await pr.json();
+          if (pr.ok && pj.success && pj.signedUrl) {
+            pdfBtn.href = pj.signedUrl;
+            pdfBtn.style.display = 'inline-flex';
+          }
+        } catch(e) {}
+      } catch(e) {
+        pill.textContent = '❌ Hitilafu';
+        content.className = 'msg';
+        content.innerHTML = `<div class="err">${e.message}</div>`;
+      }
+    }
+
+    function reload(){ load(); }
+    load();
+  </script>
+</body>
+</html>
+

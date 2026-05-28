@@ -424,8 +424,7 @@
   <div class="wrap">
     <div class="error-banner" id="errBanner">
       ❌ <strong>Haiwezi kuunganika na seva.</strong>
-      Hakikisha server inaendesha kwenye <code>http://localhost:5000</code>
-      kisha fungua <strong>http://localhost:5000/admin.html</strong>
+      Hakikisha umefungua ukurasa huu kutoka kwenye domain ya server (mf. `https://your-domain.com/admin.html`).
     </div>
 
     <!-- Stats -->
@@ -442,8 +441,8 @@
       <div class="btn-group">
         <button class="btn btn-primary" onclick="doSearch()">Tafuta</button>
         <button class="btn btn-outline" onclick="loadStudents(1)">↺ Wote</button>
-        <a class="btn btn-accent" href="http://localhost:5000/api/admin/export/csv" download>⬇ CSV</a>
-        <a class="btn btn-accent" href="http://localhost:5000/api/admin/export/json" download>⬇ JSON</a>
+        <a class="btn btn-accent" href="/api/admin/export/csv" download>⬇ CSV</a>
+        <a class="btn btn-accent" href="/api/admin/export/json" download>⬇ JSON</a>
         <button class="btn btn-outline" onclick="doPrint()" title="Print current view">🖨 Print</button>
         <button class="btn btn-outline" onclick="printStudent()" id="printStudentBtn" style="display:none;" title="Print selected student">🖨 Print Student</button>
       </div>
@@ -558,7 +557,8 @@
   });
 
   /* ─── API ─── */
-  const API = 'http://localhost:5000';
+  // Same-origin API (works when deployed online).
+  const API = '';
   let currentPage = 1;
 
   async function checkHealth(){
@@ -573,7 +573,7 @@
       document.getElementById('serverStatus').style.color='#fca5a5';
       document.getElementById('errBanner').classList.add('show');
       document.getElementById('tbody').innerHTML=
-        `<tr><td colspan="10" class="msg">❌ Haiwezi kuunganika. Fungua: <strong>http://localhost:5000/admin.html</strong></td></tr>`;
+        `<tr><td colspan="10" class="msg">❌ Haiwezi kuunganika na server.</td></tr>`;
     }
   }
 

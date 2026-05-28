@@ -188,6 +188,7 @@
       .submit-btn, .reset-btn, .download-btn { width: 100%; text-align: center; }
     }
   </style>
+  <script src="config.js"></script>
 </head>
 <body>
   <div class="container">
@@ -855,7 +856,7 @@
 
   <script>
     // === Configuration ===
-    const API_URL = 'http://localhost:5000/api';
+    const API_URL = `${(window.APP_CONFIG?.API_BASE || '').replace(/\/+$/,'')}/api`;
     const photoData = {
       photo1data: null, photo2data: null, photo3data: null, photo4data: null,
       birthCert1data: null, birthCert2data: null, birthCert3data: null, birthCert4data: null
@@ -1182,6 +1183,11 @@
             const result = await sendToServer(currentStudentData, pdfBlob);
             if (result.success) {
               successMessage.innerHTML = '<i class="fas fa-check-circle" style="margin-right:8px;"></i>Umefanikiwa kujiandikisha!<br><small><i class="fas fa-envelope"></i> PDF imetumwa kwa barua pepe ya shule: Uutawalataboraschool@gmail.com</small>';
+              // Send to records page (online record)
+              if (result.studentId) {
+                try { sessionStorage.setItem('lastStudentId', String(result.studentId)); } catch(e) {}
+                setTimeout(() => { window.location.href = `records.html?id=${encodeURIComponent(result.studentId)}`; }, 600);
+              }
             }
           } catch (error) {
             successMessage.innerHTML = '<i class="fas fa-check-circle" style="margin-right:8px;"></i>Fomu imehifadhiwa!<br><small><i class="fas fa-exclamation-triangle"></i> Barua pepe haikutumwa. Unaweza kupakua PDF hapa chini.</small>';
@@ -1190,9 +1196,7 @@
           successMessage.innerHTML = '<i class="fas fa-check-circle" style="margin-right:8px;"></i>Fomu imehifadhiwa ndani!<br><small><i class="fas fa-exclamation-triangle"></i> Seva haipo mtandaoni. Pakua PDF hapa chini.</small>';
         }
 
-        const students = JSON.parse(localStorage.getItem('taboraBoys2026') || '[]');
-        students.push(currentStudentData);
-        localStorage.setItem('taboraBoys2026', JSON.stringify(students));
+        // Saved online via server (/api/register). No localStorage persistence.
 
         submitBtn.classList.remove('loading');
         submitBtn.disabled = false;
