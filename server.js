@@ -8,6 +8,15 @@ const path             = require('path');
 const { createClient } = require('@supabase/supabase-js');
 require('dotenv').config();
 
+// At the bottom, just before app.listen()
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index_enhanced.html'));
+});
+// Catch-all for any unmatched route (also prevents 404 on refresh)
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index_enhanced.html'));
+});
+
 // ================================================================
 //  STARTUP CHECKS — fails fast with a clear message if keys missing
 // ================================================================
