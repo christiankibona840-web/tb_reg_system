@@ -3,10 +3,13 @@
 <head>
 <script>
 (function(){
+  const SUPABASE_URL      = 'https://mnxnhujvygzkjdihpcde.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1ueG5odWp2eWd6a2pkaWhwY2RlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc2ODkzMjksImV4cCI6MjA5MzI2NTMyOX0.i5Z4HTPYd5fON8Q7_SUvzQMgwqxud5ifJGtiMPWpk5M';
+
   // Visibility check now uses Supabase asynchronously — page shows by default,
   // then hides if the server says so (avoids blocking initial render).
-  const SUPABASE_URL = 'https://mfkvwcryiclehbrkqthu.supabase.co';
-  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1ma3Z3Y3J5aWNsZWhicmtxdGh1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4NDMxMTksImV4cCI6MjA5NTQxOTExOX0.Sj3i_J5TvGCEm-imsmDreXwuOld3NZcuvsCukgcCe7o';
+ // const SUPABASE_URL = 'https://mfkvwcryiclehbrkqthu.supabase.co';
+ // const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1ma3Z3Y3J5aWNsZWhicmtxdGh1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4NDMxMTksImV4cCI6MjA5NTQxOTExOX0.Sj3i_J5TvGCEm-imsmDreXwuOld3NZcuvsCukgcCe7o';
   fetch(`${SUPABASE_URL}/rest/v1/kv_store?key=eq.tbss_vis&select=value`, {
     headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }
   }).then(r => r.json()).then(data => {
