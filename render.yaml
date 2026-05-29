@@ -10,7 +10,7 @@ services:
       - key: NODE_ENV
         value: production
       - key: SUPABASE_URL
-        value: https://mfkvwcryiclehbrkqthu.supabase.co
+        value: https://mnxnhujvygzkjdihpcde.supabase.co
       - key: SUPABASE_PDF_BUCKET
         value: registrations
       - key: SUPABASE_PDF_PREFIX
