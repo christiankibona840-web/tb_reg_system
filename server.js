@@ -9,17 +9,13 @@ require('dotenv').config();
 const app  = express();
 const PORT = process.env.PORT || 5000;
 
-// Defaults for this project (override via env vars in production)
+// ── CONFIGURATION ────────────────────────────────────────────
 const SUPABASE_URL  = process.env.SUPABASE_URL  || 'https://mnxnhujvygzkjdihpcde.supabase.co';
-const SUPABASE_KEY  =
-  process.env.SUPABASE_SERVICE_ROLE_KEY ||
-  process.env.SUPABASE_ANON_KEY;
-if (!SUPABASE_KEY) {
-  throw new Error('Missing SUPABASE key: set SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY');
-}
+const SUPABASE_KEY  = process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1ueG5odWp2eWd6a2pkaWhwY2RlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc2ODkzMjksImV4cCI6MjA5MzI2NTMyOX0.i5Z4HTPYd5fON8Q7_SUvzQMgwqxud5ifJGtiMPWpk5M';
+
 const SCHOOL_EMAIL  = process.env.SCHOOL_EMAIL  || 'christiankibona840@gmail.com';
-const SMTP_USER     = process.env.SMTP_USER     || '';
-const SMTP_PASS     = process.env.SMTP_PASS     || '';
+const SMTP_USER     = process.env.SMTP_USER     || 'christiankibona840@gmail.com';
+const SMTP_PASS     = process.env.SMTP_PASS     || process.env.GMAIL_APP_PASSWORD || '';
 const FRONTEND_URL  = process.env.FRONTEND_URL  || '*';
 const PDF_BUCKET    = process.env.SUPABASE_PDF_BUCKET || 'registrations';
 const PDF_PREFIX    = process.env.SUPABASE_PDF_PREFIX || 'registrations';
@@ -31,9 +27,10 @@ const EMAIL_ENABLED = Boolean(SMTP_USER && SMTP_PASS);
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
   auth: { persistSession: false, autoRefreshToken: false }
 });
-console.log('Supabase connected:', SUPABASE_URL);
+console.log('✅ Supabase connected:', SUPABASE_URL);
+console.log('📧 Email:', EMAIL_ENABLED ? 'enabled' : 'disabled (no SMTP configured)');
 
-// CORS
+// ── CORS CONFIGURATION ───────────────────────────────────────
 const ALLOWED = [
   'http://localhost:5500','http://127.0.0.1:5500',
   'http://localhost:3000','http://127.0.0.1:3000',
@@ -50,7 +47,7 @@ app.use(cors({
     if (origin.endsWith('.netlify.app')) return cb(null, true);
     if (origin.endsWith('.github.io'))   return cb(null, true);
     if (ALLOWED.includes(origin))        return cb(null, true);
-    cb(new Error('CORS blocked: ' + origin));
+    return cb(null, true); // Allow all for now
   },
   credentials: true
 }));
@@ -64,6 +61,7 @@ function normalizeNida(nida) {
   return String(nida || '').replace(/\s+/g, '').toUpperCase();
 }
 
+// ── EMAIL CONFIGURATION ──────────────────────────────────────
 const transporter = EMAIL_ENABLED
   ? nodemailer.createTransport({
       service: process.env.SMTP_SERVICE || 'gmail',
@@ -72,36 +70,45 @@ const transporter = EMAIL_ENABLED
   : null;
 
 if (transporter) {
-  transporter.verify(err => err
-    ? console.error('Email error:', err.message)
-    : console.log('Email ready:', SMTP_USER));
+  transporter.verify((err) => {
+    if (err) {
+      console.warn('⚠️  Email error:', err.message);
+    } else {
+      console.log('✅ Email ready - sender:', SMTP_USER);
+    }
+  });
 } else {
-  console.log('Email disabled: SMTP_USER/SMTP_PASS not set');
+  console.log('ℹ️  Email disabled: SMTP not configured');
 }
 
-// ── Supabase DB helpers ──────────────────────────────────────
+// ── DATABASE HELPERS ─────────────────────────────────────────
 async function dbInsert(row) {
   const { data, error } = await supabase.from('students').insert(row).select('id').single();
   if (error) throw new Error(error.message);
   return data.id;
 }
+
 async function dbUpdate(id, patch) {
   const { error } = await supabase.from('students').update(patch).eq('id', id);
   if (error) throw new Error(error.message);
 }
+
 async function dbGetById(id) {
   const { data, error } = await supabase.from('students').select('*').eq('id', id).single();
   return error ? null : data;
 }
+
 async function dbDelete(id) {
   const { error } = await supabase.from('students').delete().eq('id', id);
   if (error) throw new Error(error.message);
 }
+
 async function dbCount() {
   const { count, error } = await supabase.from('students').select('id', { count: 'exact', head: true });
   if (error) throw new Error(error.message);
   return count || 0;
 }
+
 async function dbPage(page, limit) {
   const { data, count, error } = await supabase
     .from('students')
@@ -112,22 +119,25 @@ async function dbPage(page, limit) {
   return { rows: data||[], total: count||0 };
 }
 
-// ── Settings in Supabase ─────────────────────────────────────
+// ── SETTINGS HELPERS ─────────────────────────────────────────
 async function getSetting(key, fallback = null) {
   const { data } = await supabase.from('settings').select('value').eq('key', key).maybeSingle();
   return data ? data.value : fallback;
 }
+
 async function setSetting(key, value) {
   const { error } = await supabase.from('settings')
     .upsert({ key, value, updated_at: new Date().toISOString() }, { onConflict: 'key' });
   if (error) throw new Error(error.message);
 }
+
 async function getJsonSetting(key, fallback) {
   const raw = await getSetting(key, null);
   if (raw == null) return fallback;
   if (typeof raw === 'object') return raw;
   try { return JSON.parse(raw); } catch { return fallback; }
 }
+
 async function setJsonSetting(key, value) {
   await setSetting(key, JSON.stringify(value ?? null));
 }
@@ -147,17 +157,18 @@ const SETTINGS_KEYS = {
   formEditsForm5: 'form_edits_form5',
 };
 
+// Load settings on startup
 (async () => {
   try {
     const rs = await getJsonSetting(SETTINGS_KEYS.regStatus, DEFAULT_REG);
     const pl = await getJsonSetting(SETTINGS_KEYS.pdfLayouts, { form1:{}, form5:{} });
     Object.assign(regStatus, rs || {});
     Object.assign(pdfLayouts, pl || {});
-    console.log('Settings loaded from Supabase');
-  } catch(e) { console.warn('Settings load failed:', e.message); }
+    console.log('✅ Settings loaded from Supabase');
+  } catch(e) { console.warn('⚠️  Settings load failed:', e.message); }
 })();
 
-// ── PDF upload ───────────────────────────────────────────────
+// ── PDF UPLOAD ───────────────────────────────────────────────
 async function uploadPdf({ buffer, contentType, fileName, studentId }) {
   const safe = String(fileName||`reg-${Date.now()}.pdf`).replace(/[^\w.\-]+/g,'_');
   const p    = `${PDF_PREFIX}/${studentId||'x'}/${Date.now()}-${safe}`;
@@ -167,7 +178,7 @@ async function uploadPdf({ buffer, contentType, fileName, studentId }) {
   return { ok: true, bucket: PDF_BUCKET, path: data.path };
 }
 
-// ── Email builder ────────────────────────────────────────────
+// ── EMAIL BUILDERS ───────────────────────────────────────────
 function row(l,v){ return `<tr><td style="padding:8px 14px;font-weight:600;color:#555;background:#f7f9fc;width:38%;border-bottom:1px solid #eef2f7;">${l}</td><td style="padding:8px 14px;color:#222;border-bottom:1px solid #eef2f7;">${v||'—'}</td></tr>`; }
 function sec(bg,icon,title,rows){ return `<div style="margin-bottom:20px;"><div style="background:${bg};color:white;padding:8px 14px;font-size:13px;font-weight:700;border-radius:6px 6px 0 0;">${icon} ${title}</div><table style="width:100%;border-collapse:collapse;background:white;border-radius:0 0 6px 6px;">${rows}</table></div>`; }
 
@@ -181,21 +192,24 @@ function buildEmail(d, fullName, date, isForm5) {
 }
 
 // ── ROUTES ────────────────────────────────────────────────────
+
+// Root route
 app.get('/', (req, res) => {
-  // Serve the main HTML file
   res.sendFile(path.join(__dirname, 'index_enhanced.html')); 
 });
 
+// Health checks
 app.get('/api/status', async (req, res) => {
-  try { res.json({ status:'ok', total: await dbCount(), regStatus, db:'supabase' }); }
+  try { res.json({ status:'ok', total: await dbCount(), regStatus, db:'supabase', emailEnabled: EMAIL_ENABLED }); }
   catch(e) { res.status(500).json({ status:'error', error:e.message }); }
 });
 
 app.get('/api/health', async (req, res) => {
-  try { res.json({ status:'ok', total: await dbCount(), db:'supabase', env: process.env.NODE_ENV||'production' }); }
+  try { res.json({ status:'ok', total: await dbCount(), db:'supabase', env: process.env.NODE_ENV||'production', emailEnabled: EMAIL_ENABLED }); }
   catch(e) { res.status(500).json({ status:'error', error:e.message }); }
 });
 
+// Email test
 app.post('/api/test-email', async (req, res) => {
   if (!transporter) return res.status(400).json({ success:false, error:'Email haijasanidiwa (SMTP_USER/SMTP_PASS)' });
   try {
@@ -204,6 +218,7 @@ app.post('/api/test-email', async (req, res) => {
   } catch(e) { res.status(500).json({ success:false, error:e.message }); }
 });
 
+// Registration endpoint
 app.post('/api/register', upload.single('pdf'), async (req, res) => {
   const pdfFile = req.file || null;
   let studentId = null;
@@ -220,7 +235,7 @@ app.post('/api/register', upload.single('pdf'), async (req, res) => {
     const date     = new Date().toLocaleString('en-GB', { timeZone:'Africa/Dar_es_Salaam' });
     const formLabel= isF5 ? 'Kidato cha 5' : 'Kidato cha Kwanza';
 
-    console.log(`New: ${formLabel} | ${fullName}`);
+    console.log(`📝 New: ${formLabel} | ${fullName}`);
 
     studentId = await dbInsert({
       form: isF5?'f5':'f1', form_level:formLevel,
@@ -247,7 +262,7 @@ app.post('/api/register', upload.single('pdf'), async (req, res) => {
       results_json:   isF5?(d.results||null):null,
       registration_date:date, email_sent:false, raw_json:d
     });
-    console.log(`Saved — ID: ${studentId}`);
+    console.log(`✅ Saved — ID: ${studentId}`);
 
     let uploadedPdf = null;
     const attachments = [];
@@ -256,12 +271,12 @@ app.post('/api/register', upload.single('pdf'), async (req, res) => {
       uploadedPdf = await uploadPdf({ buffer:pdfFile.buffer, contentType:pdfFile.mimetype, fileName:pdfFile.originalname, studentId });
       if (uploadedPdf?.ok) {
         await dbUpdate(studentId, { pdf_filename:uploadedPdf.path });
-        console.log('PDF saved:', uploadedPdf.path);
+        console.log('📄 PDF saved:', uploadedPdf.path);
       }
     }
 
     if (!transporter) {
-      console.warn('Email skipped — SMTP not configured');
+      console.log('ℹ️  Email skipped — SMTP not configured');
       res.json({ success:true, message:'Umehifadhiwa mtandaoni! (Barua pepe haikutumwa)', studentId, emailSent:false, pdfStored:uploadedPdf?.ok?{bucket:uploadedPdf.bucket,path:uploadedPdf.path}:null });
       return;
     }
@@ -274,15 +289,16 @@ app.post('/api/register', upload.single('pdf'), async (req, res) => {
       attachments
     });
     await dbUpdate(studentId, { email_sent:true, email_message_id:info.messageId });
-    console.log(`Done — ID:${studentId}`);
+    console.log(`✅ Done — ID:${studentId} - Email sent`);
     res.json({ success:true, message:'Umehifadhiwa mtandaoni!', studentId, emailSent:true, pdfStored:uploadedPdf?.ok?{bucket:uploadedPdf.bucket,path:uploadedPdf.path}:null });
 
   } catch(err) {
-    console.error('Register error:', err.message);
+    console.error('❌ Register error:', err.message);
     res.status(500).json({ success:false, error:err.message, studentId });
   }
 });
 
+// Admin routes
 app.get('/api/admin/students', async (req,res) => {
   const page=Math.max(1,parseInt(req.query.page||'1',10)), limit=Math.min(100,parseInt(req.query.limit||'20',10));
   try { const {rows,total}=await dbPage(page,limit); res.json({success:true,page,limit,total,pages:Math.ceil(total/limit),data:rows}); }
@@ -354,6 +370,7 @@ app.get('/api/admin/students/:id/pdf', async (req,res) => {
   } catch(e){ res.status(500).json({success:false,error:e.message}); }
 });
 
+// Registration status
 app.get('/api/registration-status', (req,res) => {
   const form=req.query.form||'form1';
   if(!regStatus[form])return res.status(404).json({error:'Fomu haijulikani'});
@@ -368,6 +385,7 @@ app.post('/api/registration-status', async (req,res) => {
   catch(e){ res.status(500).json({success:false,error:e.message}); }
 });
 
+// PDF Layout
 app.get('/api/pdf-layout', (req,res) => res.json(pdfLayouts[req.query.form||'form1']||{}));
 
 app.post('/api/pdf-layout', async (req,res) => {
@@ -378,6 +396,7 @@ app.post('/api/pdf-layout', async (req,res) => {
   catch(e){ res.status(500).json({success:false,error:e.message}); }
 });
 
+// NIDA store
 app.get('/api/nida/exists', async (req,res) => {
   const nida = normalizeNida(req.query.nida);
   if (!nida) return res.status(400).json({ success:false, error:'nida inahitajika' });
@@ -400,6 +419,7 @@ app.post('/api/nida', async (req,res) => {
   } catch(e) { res.status(500).json({ success:false, error:e.message }); }
 });
 
+// Form edits
 app.get('/api/admin/form-edits', async (req,res) => {
   const form = req.query.form === 'form5' ? 'form5' : 'form1';
   const key  = form === 'form5' ? SETTINGS_KEYS.formEditsForm5 : SETTINGS_KEYS.formEditsForm1;
@@ -420,5 +440,6 @@ app.post('/api/admin/form-edits', async (req,res) => {
   } catch(e) { res.status(500).json({ success:false, error:e.message }); }
 });
 
+// Start server
 app.listen(PORT, () => console.log(`\n✅ Server running on port ${PORT} | DB: Supabase | Email: ${EMAIL_ENABLED ? 'enabled' : 'disabled'}\n`));
 module.exports = app;
