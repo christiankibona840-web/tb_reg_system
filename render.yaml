@@ -17,10 +17,5 @@ services:
         value: registrations
       - key: SUPABASE_SIGNED_URL_TTL
         value: "3600"
-      # Set one of the following in Render dashboard (keep secret):
-      # - SUPABASE_SERVICE_ROLE_KEY (recommended)
-      # - or SUPABASE_ANON_KEY (not recommended for admin/write operations)
-      #
-      # Optional email sending (keep secret):
-      # - SMTP_USER, SMTP_PASS, SMTP_SERVICE, SCHOOL_EMAIL
-
+      # Add these in Render dashboard (keep secret):
+      # SUPABASE_ANON_KEY, RESEND_API_KEY, SCHOOL_EMAIL
