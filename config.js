@@ -1,20 +1,25 @@
-// Global runtime configuration for the static pages.
-// - API_BASE: leave '' to use same-origin (recommended for deployment).
-//   Example: 'https://your-backend.onrender.com' (no trailing slash)
-// - Supabase values are used by the Node backend (`server.js`) via env vars.
-//   The anon key is safe to expose, but never expose the service-role key in frontend.
-window.APP_CONFIG = window.APP_CONFIG || {};
+/**
+ * TBSS — API Configuration
+ * Sets window.APP_CONFIG.API_BASE used by shudi.html and form5.html.
+ * Deploy this file alongside your HTML files on Vercel.
+ */
+(function () {
+  var hostname = window.location.hostname;
 
-window.APP_CONFIG.API_BASE =
-  window.APP_CONFIG.API_BASE ??
-  ''; // same-origin by default
+  var isLocal  = hostname === 'localhost'
+              || hostname === '127.0.0.1'
+              || hostname === ''
+              || hostname.startsWith('192.168.');
 
-window.APP_CONFIG.SUPABASE_URL =
-  window.APP_CONFIG.SUPABASE_URL ??
-  'https://mfkvwcryiclehbrkqthu.supabase.co';
+  // ─── PRODUCTION URL ───────────────────────────────────────────
+  // After deploying to Railway, paste your Railway URL here:
+  var RAILWAY_URL = 'https://tabora-boys-backend.up.railway.app';
+  // ─────────────────────────────────────────────────────────────
 
-// NOTE: anon key is public; still prefer setting it via hosting env when possible.
-window.APP_CONFIG.SUPABASE_ANON_KEY =
-  window.APP_CONFIG.SUPABASE_ANON_KEY ??
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1ma3Z3Y3J5aWNsZWhicmtxdGh1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4NDMxMTksImV4cCI6MjA5NTQxOTExOX0.Sj3i_J5TvGCEm-imsmDreXwuOld3NZcuvsCukgcCe7o';
+  var API_BASE = isLocal ? 'http://localhost:5000' : RAILWAY_URL;
 
+  // This is what shudi.html and form5.html read:
+  window.APP_CONFIG = { API_BASE: API_BASE };
+
+  console.log('[TBSS] API_BASE:', API_BASE, isLocal ? '(local)' : '(production)');
+})();
