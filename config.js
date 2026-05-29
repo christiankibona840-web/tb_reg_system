@@ -1,25 +1,17 @@
-/**
- * TBSS — API Configuration
- * Sets window.APP_CONFIG.API_BASE used by shudi.html and form5.html.
- * Deploy this file alongside your HTML files on Vercel.
- */
-(function () {
-  var hostname = window.location.hostname;
-
-  var isLocal  = hostname === 'localhost'
-              || hostname === '127.0.0.1'
-              || hostname === ''
-              || hostname.startsWith('192.168.');
-
-  // ─── PRODUCTION URL ───────────────────────────────────────────
-  // After deploying to Railway, paste your Railway URL here:
-  var RAILWAY_URL = 'https://tabora-boys-backend.up.railway.app';
-  // ─────────────────────────────────────────────────────────────
-
-  var API_BASE = isLocal ? 'http://localhost:5000' : RAILWAY_URL;
-
-  // This is what shudi.html and form5.html read:
-  window.APP_CONFIG = { API_BASE: API_BASE };
-
-  console.log('[TBSS] API_BASE:', API_BASE, isLocal ? '(local)' : '(production)');
-})();
+// ══════════════════════════════════════════════════════════════
+//  Tabora Boys School — Frontend Configuration
+//
+//  IMPORTANT: Replace YOUR_RENDER_APP_NAME below with your
+//  actual Render service name.
+//  Example: if your URL is https://tabora-boys.onrender.com
+//           set API_BASE to 'https://tabora-boys.onrender.com'
+// ══════════════════════════════════════════════════════════════
+ 
+window.APP_CONFIG = {
+  // ── REPLACE with your actual Render backend URL ───────────
+  API_BASE: 'https://tbss.onrender.com',
+ 
+  // ── Single Supabase project used by BOTH frontend & backend
+  SUPABASE_URL:      'https://mnxnhujvygzkjdihpcde.supabase.co',
+  SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1ueG5odWp2eWd6a2pkaWhwY2RlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc2ODkzMjksImV4cCI6MjA5MzI2NTMyOX0.i5Z4HTPYd5fON8Q7_SUvzQMgwqxud5ifJGtiMPWpk5M',
+};
