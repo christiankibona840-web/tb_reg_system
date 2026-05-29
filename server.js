@@ -9,49 +9,53 @@ require('dotenv').config();
 const app  = express();
 const PORT = process.env.PORT || 5000;
 
-// Defaults for this project (override via env vars in production)
-const SUPABASE_URL  = process.env.SUPABASE_URL  || 'https://mnxnhujvygzkjdihpcde.supabase.co';
-const SUPABASE_KEY  =
-  process.env.SUPABASE_SERVICE_ROLE_KEY ||
-  process.env.SUPABASE_ANON_KEY;
-if (!SUPABASE_KEY) {
-  throw new Error('Missing SUPABASE key: set SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY');
+// ══════════════════════════════════════════════════════════════
+//  ENVIRONMENT VALIDATION — server stops if keys are missing
+// ══════════════════════════════════════════════════════════════
+const MISSING = ['SUPABASE_URL','SUPABASE_SERVICE_ROLE_KEY','SMTP_USER','SMTP_PASS'].filter(k => !process.env[k]);
+if (MISSING.length) {
+  console.error('❌  Missing environment variables:', MISSING.join(', '));
+  console.error('    Add them in Railway → your project → Variables tab.');
+  process.exit(1);
 }
-const SCHOOL_EMAIL  = process.env.SCHOOL_EMAIL  || 'christiankibona840@gmail.com';
-const SMTP_USER     = process.env.SMTP_USER     || '';
-const SMTP_PASS     = process.env.SMTP_PASS     || '';
-const FRONTEND_URL  = process.env.FRONTEND_URL  || '*';
-const PDF_BUCKET    = process.env.SUPABASE_PDF_BUCKET || 'registrations';
-const PDF_PREFIX    = process.env.SUPABASE_PDF_PREFIX || 'registrations';
-const SIGNED_TTL    = Math.max(60, parseInt(process.env.SUPABASE_SIGNED_URL_TTL || '3600', 10));
 
-// Email is optional — server works fine without SMTP
-const EMAIL_ENABLED = Boolean(SMTP_USER && SMTP_PASS);
+// ══════════════════════════════════════════════════════════════
+//  CONFIG  (everything from environment variables — no hardcoding)
+// ══════════════════════════════════════════════════════════════
+const SCHOOL_EMAIL   = process.env.SCHOOL_EMAIL  || process.env.SMTP_USER;
+const FRONTEND_URL   = process.env.FRONTEND_URL  || '*';  // e.g. https://tabora-boys.vercel.app
+const PDF_BUCKET     = process.env.SUPABASE_PDF_BUCKET || 'registrations';
+const PDF_PREFIX     = process.env.SUPABASE_PDF_PREFIX || 'registrations';
+const SIGNED_URL_TTL = Math.max(60, parseInt(process.env.SUPABASE_SIGNED_URL_TTL || '3600', 10));
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
-  auth: { persistSession: false, autoRefreshToken: false }
-});
-console.log('Supabase connected:', SUPABASE_URL);
+// ══════════════════════════════════════════════════════════════
+//  SUPABASE  (only database — no SQLite, no local files)
+// ══════════════════════════════════════════════════════════════
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY,
+  { auth: { persistSession: false, autoRefreshToken: false } }
+);
+console.log('✅ Supabase connected');
 
-// CORS
+// ══════════════════════════════════════════════════════════════
+//  CORS  — allow your Vercel frontend + local dev
+// ══════════════════════════════════════════════════════════════
 const ALLOWED = [
-  'http://localhost:5500','http://127.0.0.1:5500',
-  'http://localhost:3000','http://127.0.0.1:3000',
-  'http://localhost:5000',
-];
-if (FRONTEND_URL && FRONTEND_URL !== '*') ALLOWED.push(FRONTEND_URL);
+  FRONTEND_URL,
+  'http://localhost:5500',
+  'http://127.0.0.1:5500',
+  'http://localhost:3000',
+].filter(o => o && o !== '*');
 
 app.use(cors({
   origin: (origin, cb) => {
     if (!origin) return cb(null, true);
-    if (FRONTEND_URL === '*') return cb(null, true);
-    if (origin.endsWith('.vercel.app'))  return cb(null, true);
-    if (origin.endsWith('.render.com'))  return cb(null, true);
-    if (origin.endsWith('.netlify.app')) return cb(null, true);
-    if (origin.endsWith('.github.io'))   return cb(null, true);
-    if (ALLOWED.includes(origin))        return cb(null, true);
-    cb(new Error('CORS blocked: ' + origin));
+    if (FRONTEND_URL === '*' || ALLOWED.some(o => origin.startsWith(o))) return cb(null, true);
+    console.warn('🚫 CORS blocked:', origin);
+    cb(new Error('Not allowed by CORS'));
   },
+  methods: ['GET','POST','DELETE','OPTIONS'],
   credentials: true
 }));
 
@@ -60,26 +64,21 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use(express.static(path.join(__dirname)));
 const upload = multer({ storage: multer.memoryStorage() });
 
-function normalizeNida(nida) {
-  return String(nida || '').replace(/\s+/g, '').toUpperCase();
-}
+// ══════════════════════════════════════════════════════════════
+//  EMAIL
+// ══════════════════════════════════════════════════════════════
+const transporter = nodemailer.createTransport({
+  service: process.env.SMTP_SERVICE || 'gmail',
+  auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
+});
+transporter.verify(err => {
+  if (err) console.error('❌ Email error:', err.message);
+  else     console.log('✅ Email ready →', process.env.SMTP_USER);
+});
 
-const transporter = EMAIL_ENABLED
-  ? nodemailer.createTransport({
-      service: process.env.SMTP_SERVICE || 'gmail',
-      auth: { user: SMTP_USER, pass: SMTP_PASS }
-    })
-  : null;
-
-if (transporter) {
-  transporter.verify(err => err
-    ? console.error('Email error:', err.message)
-    : console.log('Email ready:', SMTP_USER));
-} else {
-  console.log('Email disabled: SMTP_USER/SMTP_PASS not set');
-}
-
-// ── Supabase DB helpers ──────────────────────────────────────
+// ══════════════════════════════════════════════════════════════
+//  DATABASE HELPERS  (Supabase only)
+// ══════════════════════════════════════════════════════════════
 async function dbInsert(row) {
   const { data, error } = await supabase.from('students').insert(row).select('id').single();
   if (error) throw new Error(error.message);
@@ -97,183 +96,197 @@ async function dbDelete(id) {
   const { error } = await supabase.from('students').delete().eq('id', id);
   if (error) throw new Error(error.message);
 }
-async function dbCount() {
-  const { count, error } = await supabase.from('students').select('id', { count: 'exact', head: true });
-  if (error) throw new Error(error.message);
-  return count || 0;
-}
 async function dbPage(page, limit) {
-  const { data, count, error } = await supabase
-    .from('students')
-    .select('id,created_at,full_name,admission_no,form_level,combination,shule_iliyotoka,mzazi_simu_kuu,damu,email_sent,registration_date', { count: 'exact' })
-    .order('id', { ascending: false })
-    .range((page-1)*limit, page*limit-1);
+  const from = (page-1)*limit;
+  const { data, count, error } = await supabase.from('students')
+    .select('id,created_at,full_name,admission_no,form_level,combination,shule_iliyotoka,mzazi_simu_kuu,damu,email_sent,registration_date', { count:'exact' })
+    .order('id',{ascending:false}).range(from, from+limit-1);
   if (error) throw new Error(error.message);
   return { rows: data||[], total: count||0 };
 }
 
-// ── Settings in Supabase ─────────────────────────────────────
-async function getSetting(key, fallback = null) {
-  const { data } = await supabase.from('settings').select('value').eq('key', key).maybeSingle();
+// ══════════════════════════════════════════════════════════════
+//  SETTINGS  — reg_status and pdf_layouts saved to Supabase
+//  (replaces reg_status.json and pdf_layouts.json local files)
+// ══════════════════════════════════════════════════════════════
+async function getSetting(key, fallback) {
+  const { data } = await supabase.from('settings').select('value').eq('key',key).maybeSingle();
   return data ? data.value : fallback;
 }
 async function setSetting(key, value) {
   const { error } = await supabase.from('settings')
-    .upsert({ key, value, updated_at: new Date().toISOString() }, { onConflict: 'key' });
+    .upsert({ key, value, updated_at: new Date().toISOString() }, { onConflict:'key' });
   if (error) throw new Error(error.message);
 }
-async function getJsonSetting(key, fallback) {
-  const raw = await getSetting(key, null);
-  if (raw == null) return fallback;
-  if (typeof raw === 'object') return raw;
-  try { return JSON.parse(raw); } catch { return fallback; }
-}
-async function setJsonSetting(key, value) {
-  await setSetting(key, JSON.stringify(value ?? null));
-}
 
-const DEFAULT_REG = {
-  form1: { open: true, message: 'Usajili wa Kidato cha Kwanza umefungwa.', deadline: '' },
-  form5: { open: true, message: 'Usajili wa Kidato cha 5 umefungwa.', deadline: '' }
+// In-memory cache — reloaded from Supabase on every startup
+let regStatus = {
+  form1: { open:true, message:'Usajili wa Kidato cha Kwanza umefungwa.', deadline:'' },
+  form5: { open:true, message:'Usajili wa Kidato cha 5 umefungwa.',      deadline:'' }
 };
-let regStatus  = { ...DEFAULT_REG };
-let pdfLayouts = { form1: {}, form5: {} };
-
-const SETTINGS_KEYS = {
-  regStatus:      'reg_status',
-  pdfLayouts:     'pdf_layouts',
-  nidaStore:      'nida_store',
-  formEditsForm1: 'form_edits_form1',
-  formEditsForm5: 'form_edits_form5',
-};
+let pdfLayouts = { form1:{}, form5:{} };
 
 (async () => {
   try {
-    const rs = await getJsonSetting(SETTINGS_KEYS.regStatus, DEFAULT_REG);
-    const pl = await getJsonSetting(SETTINGS_KEYS.pdfLayouts, { form1:{}, form5:{} });
-    Object.assign(regStatus, rs || {});
-    Object.assign(pdfLayouts, pl || {});
-    console.log('Settings loaded from Supabase');
-  } catch(e) { console.warn('Settings load failed:', e.message); }
+    const [rs, pl] = await Promise.all([
+      getSetting('reg_status',  regStatus),
+      getSetting('pdf_layouts', pdfLayouts)
+    ]);
+    Object.assign(regStatus,  rs);
+    Object.assign(pdfLayouts, pl);
+    console.log('✅ Settings loaded from Supabase');
+  } catch(e) {
+    console.warn('⚠️  Settings load failed (using defaults):', e.message);
+  }
 })();
 
-// ── PDF upload ───────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════
+//  PDF STORAGE
+// ══════════════════════════════════════════════════════════════
 async function uploadPdf({ buffer, contentType, fileName, studentId }) {
   const safe = String(fileName||`reg-${Date.now()}.pdf`).replace(/[^\w.\-]+/g,'_');
-  const p    = `${PDF_PREFIX}/${studentId||'x'}/${Date.now()}-${safe}`;
+  const p    = `${PDF_PREFIX}/${studentId}/${Date.now()}-${safe}`;
   const { data, error } = await supabase.storage.from(PDF_BUCKET)
-    .upload(p, buffer, { contentType: contentType||'application/pdf', upsert: false });
-  if (error) return { ok: false, error: error.message };
-  return { ok: true, bucket: PDF_BUCKET, path: data.path };
+    .upload(p, buffer, { contentType: contentType||'application/pdf', upsert:false });
+  return error ? { ok:false, error:error.message } : { ok:true, bucket:PDF_BUCKET, path:data.path };
 }
 
-// ── Email builder ────────────────────────────────────────────
-function row(l,v){ return `<tr><td style="padding:8px 14px;font-weight:600;color:#555;background:#f7f9fc;width:38%;border-bottom:1px solid #eef2f7;">${l}</td><td style="padding:8px 14px;color:#222;border-bottom:1px solid #eef2f7;">${v||'—'}</td></tr>`; }
-function sec(bg,icon,title,rows){ return `<div style="margin-bottom:20px;"><div style="background:${bg};color:white;padding:8px 14px;font-size:13px;font-weight:700;border-radius:6px 6px 0 0;">${icon} ${title}</div><table style="width:100%;border-collapse:collapse;font-size:13px;border:1px solid #dde3ed;border-top:none;">${rows}</table></div>`; }
-
-function buildEmail(d, fullName, date, isForm5) {
-  const bg   = isForm5 ? '#553c9a' : '#1a365d';
-  const lbl  = isForm5 ? 'Kidato cha 5 2026' : 'Kidato cha Kwanza 2026';
-  const combos = {PCB:'Physics, Chemistry & Biology',PAM:'Physics, Adv. Maths & Further Maths',HGL:'History, Geography & Literature',PMC:'Physics, Mathematics & Chemistry'};
-  const extra  = isForm5 ? `<div style="background:#e9d8fd;border-radius:8px;padding:10px 14px;margin-bottom:18px;"><strong style="color:#2d1b69;">Mkondo: ${d.combination||'—'}</strong> <span style="color:#553c9a;font-size:12px;">${combos[d.combination]||''}</span></div>` : '';
-  const cseeRows = isForm5 ? sec(bg,'📊','MATOKEO YA CSEE', row('Mwaka',d.cseeYear)+row('Daraja',d.cseeDivision?'Division '+d.cseeDivision:'—')+row('Aggregate',d.cseeAggregates||'—')+((d.results||[]).map(r=>row(r.subject,`${r.grade} (${r.points} pts)`)).join('')||row('Matokeo','Hayakuingizwa'))) : '';
-  return `<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body style="margin:0;padding:0;background:#f0f4f8;font-family:Arial,sans-serif;"><div style="max-width:650px;margin:24px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,.1);"><div style="background:linear-gradient(135deg,${isForm5?'#2d1b69':'#0d1f3c'},${bg});padding:28px 32px;"><div style="color:white;font-size:17px;font-weight:800;">🏫 SHULE YA SEKONDARI TABORA WAVULANA</div><div style="color:${isForm5?'#e9d8fd':'#f0c84a'};font-size:11px;margin-top:3px;">Usajili Mpya — ${lbl}</div></div><div style="padding:16px 28px;background:${isForm5?'#faf5ff':'#e8f5e9'};border-left:4px solid ${isForm5?'#553c9a':'#2d6a4f'};"><strong>✅ ${fullName} — ${date}</strong></div><div style="padding:24px 28px;">${extra}${sec(bg,'👤','TAARIFA ZA KIBINAFSI',row('Jina Kamili',`<strong>${fullName}</strong>`)+row('Shule Iliyotoka',d.shuleIliyotoka)+row('Uraia',d.uraia)+row('Dini',d.dini)+row('Namba Usajili',d.admissionNo||'—')+row('Mkoa/Wilaya',[d.mkoa,d.wilayaMakazi].filter(Boolean).join(' / ')))}${cseeRows}${sec(bg,'👨‍👩‍👦','FAMILIA',row('Baba',d.babaNjina)+row('Simu ya Baba',d.babaSimu)+row('Mama',d.mamaNjina)+row('Simu ya Mama',d.mamaSimu))}${sec(bg,'🏥','AFYA',row('Kundi la Damu',`<strong>${d.damu||'—'}</strong>`)+row('Bima',d.bima)+row('Magonjwa',d.magonjwa||'Hakuna'))}</div><div style="background:#f7f9fc;padding:16px 28px;text-align:center;font-size:11px;color:#888;"><strong>Shule ya Sekondari Tabora Wavulana</strong> · S.L.P 374, Tabora</div></div></body></html>`;
+// ══════════════════════════════════════════════════════════════
+//  EMAIL BUILDERS
+// ══════════════════════════════════════════════════════════════
+function buildEmailHTML(d, name, date) {
+  const R = (l,v) => `<tr><td style="padding:8px 14px;font-weight:600;color:#555;background:#f7f9fc;width:38%;border-bottom:1px solid #eef2f7;">${l}</td><td style="padding:8px 14px;color:#1a1a2e;border-bottom:1px solid #eef2f7;">${v||'—'}</td></tr>`;
+  const S = (ic,t,rows) => `<div style="margin-bottom:20px;"><div style="background:#1a365d;color:white;padding:8px 14px;font-size:13px;font-weight:700;border-radius:6px 6px 0 0;">${ic} ${t}</div><table style="width:100%;border-collapse:collapse;font-size:13px;border:1px solid #dde3ed;border-top:none;">${rows}</table></div>`;
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body style="margin:0;background:#f0f4f8;font-family:Arial,sans-serif;">
+<div style="max-width:650px;margin:24px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,.1);">
+<div style="background:linear-gradient(135deg,#0d1f3c,#1a365d);padding:28px 32px;"><div style="color:white;font-size:17px;font-weight:800;">🏫 SHULE YA SEKONDARI TABORA WAVULANA</div><div style="color:#f0c84a;font-size:11px;margin-top:3px;">Usajili Mpya — Kidato cha Kwanza 2026</div></div>
+<div style="padding:16px 28px;background:#e8f5e9;border-left:4px solid #2d6a4f;"><strong style="color:#1b5e20;">✅ ${name} — ${date}</strong></div>
+<div style="padding:24px 28px;">
+${S('👤','TAARIFA ZA KIBINAFSI',R('Jina Kamili','<strong>'+name+'</strong>')+R('Tarehe ya Kuzaliwa',[d.tarehe,d.mwezi,d.mwaka].filter(Boolean).join('/'))+R('Wilaya ya Kuzaliwa',d.wilayaKuzaliwa)+R('Uraia',d.uraia)+R('Dini',d.dini)+R('Shule Iliyotoka',d.shuleIliyotoka)+R('Namba Usajili',d.admissionNo||'—')+R('Mkoa/Wilaya',[d.mkoa,d.wilayaMakazi].filter(Boolean).join(' / '))+R('Kata/Kijiji',[d.kata,d.kijiji].filter(Boolean).join(' / ')))}
+${S('👨‍👩‍👦','FAMILIA',R('Baba',d.babaNjina)+R('Simu ya Baba',d.babaSimu)+R('Mama',d.mamaNjina)+R('Simu ya Mama',d.mamaSimu)+R('Mlezi',[d.mleziJina,d.mleziSimu].filter(Boolean).join(' — ')))}
+${S('🏥','AFYA',R('Kundi la Damu','<strong style="color:#c0392b;">'+d.damu+'</strong>')+R('Bima',d.bima)+R('Magonjwa',d.magonjwa||'Hakuna'))}
+</div>
+<div style="background:#f7f9fc;padding:16px 28px;text-align:center;font-size:11px;color:#888;"><strong>Shule ya Sekondari Tabora Wavulana</strong><br>S.L.P 374, Tabora · 0755 297 005</div>
+</div></body></html>`;
 }
 
-// ── ROUTES ────────────────────────────────────────────────────
+function buildForm5EmailHTML(d, name, date) {
+  const R = (l,v) => `<tr><td style="padding:8px 14px;font-weight:600;color:#555;background:#f7f9fc;width:38%;border-bottom:1px solid #eef2f7;">${l}</td><td style="padding:8px 14px;color:#1a1a2e;border-bottom:1px solid #eef2f7;">${v||'—'}</td></tr>`;
+  const S = (ic,t,rows) => `<div style="margin-bottom:20px;"><div style="background:#553c9a;color:white;padding:8px 14px;font-size:13px;font-weight:700;border-radius:6px 6px 0 0;">${ic} ${t}</div><table style="width:100%;border-collapse:collapse;font-size:13px;border:1px solid #dde3ed;border-top:none;">${rows}</table></div>`;
+  const COMBOS={PCB:'Physics, Chemistry & Biology',PAM:'Physics, Adv. Maths & Further Maths',HGL:'History, Geography & Literature',PMC:'Physics, Mathematics & Chemistry'};
+  const rr=(d.results||[]).map(r=>R(r.subject,`${r.grade} (${r.points} pts)`)).join('')||R('Matokeo','Hayakuingizwa');
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body style="margin:0;background:#f0f4f8;font-family:Arial,sans-serif;">
+<div style="max-width:650px;margin:24px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,.1);">
+<div style="background:linear-gradient(135deg,#2d1b69,#553c9a);padding:28px 32px;"><div style="color:white;font-size:17px;font-weight:800;">🏫 SHULE YA SEKONDARI TABORA WAVULANA</div><div style="color:#e9d8fd;font-size:11px;margin-top:3px;">Usajili Mpya — Kidato cha 5 2026</div></div>
+<div style="padding:16px 28px;background:#faf5ff;border-left:4px solid #553c9a;"><strong style="color:#2d1b69;">✅ ${name} | Mkondo: ${d.combination||'—'} — ${date}</strong></div>
+<div style="padding:24px 28px;">
+<div style="background:#e9d8fd;border-radius:8px;padding:12px 16px;margin-bottom:20px;"><strong style="color:#2d1b69;font-size:16px;">Mkondo: ${d.combination||'—'}</strong> <span style="color:#553c9a;font-size:12px;">${COMBOS[d.combination]||''}</span></div>
+${S('👤','TAARIFA ZA KIBINAFSI',R('Jina Kamili','<strong>'+name+'</strong>')+R('Tarehe',d.tarehe||'—')+R('Uraia',d.uraia)+R('Dini',d.dini)+R('Shule ya O-Level',d.shuleIliyotoka)+R('Index No',d.indexNoOlevel||'—')+R('Namba Usajili',d.admissionNo||'—'))}
+${S('📊','MATOKEO YA CSEE',R('Mwaka',d.cseeYear||'—')+R('Daraja',d.cseeDivision?'Division '+d.cseeDivision:'—')+R('Aggregate',d.cseeAggregates||'—')+rr)}
+${S('👨‍👩‍👦','FAMILIA',R('Baba',d.babaNjina)+R('Simu ya Baba',d.babaSimu)+R('Mama',d.mamaNjina)+R('Simu ya Mama',d.mamaSimu))}
+</div>
+<div style="background:#f7f9fc;padding:16px 28px;text-align:center;font-size:11px;color:#888;"><strong style="color:#553c9a;">Shule ya Sekondari Tabora Wavulana</strong><br>S.L.P 374, Tabora · 0755 297 005</div>
+</div></body></html>`;
+}
+
+// ══════════════════════════════════════════════════════════════
+//  ROUTES
+// ══════════════════════════════════════════════════════════════
 app.get('/api/status', async (req, res) => {
-  try { res.json({ status:'ok', total: await dbCount(), regStatus, db:'supabase' }); }
-  catch(e) { res.status(500).json({ status:'error', error:e.message }); }
+  try {
+    const { count } = await supabase.from('students').select('id',{count:'exact',head:true});
+    res.json({ status:'ok', total_registrations:count||0, regStatus, db:'supabase' });
+  } catch(e) { res.status(500).json({ status:'error', error:e.message }); }
 });
 
 app.get('/api/health', async (req, res) => {
-  try { res.json({ status:'ok', total: await dbCount(), db:'supabase', env: process.env.NODE_ENV||'production' }); }
-  catch(e) { res.status(500).json({ status:'error', error:e.message }); }
+  try {
+    const { count } = await supabase.from('students').select('id',{count:'exact',head:true});
+    res.json({ status:'ok', total:count||0 });
+  } catch(e) { res.status(500).json({ status:'error', error:e.message }); }
 });
 
 app.post('/api/test-email', async (req, res) => {
-  if (!transporter) return res.status(400).json({ success:false, error:'Email haijasanidiwa (SMTP_USER/SMTP_PASS)' });
   try {
-    const info = await transporter.sendMail({ from:`"Tabora Boys" <${SMTP_USER}>`, to:SCHOOL_EMAIL, subject:'Test ✅', html:'<p>Mfumo unafanya kazi mtandaoni! 🎉</p>' });
+    const info = await transporter.sendMail({ from:`"Tabora Boys" <${process.env.SMTP_USER}>`, to:SCHOOL_EMAIL, subject:'Test ✅', html:'<p>Mfumo wa barua pepe unafanya kazi!</p>' });
     res.json({ success:true, messageId:info.messageId });
   } catch(e) { res.status(500).json({ success:false, error:e.message }); }
 });
 
+// ── Single /api/register (no duplicates) ──────────────────────
 app.post('/api/register', upload.single('pdf'), async (req, res) => {
-  const pdfFile = req.file || null;
   let studentId = null;
   try {
     const d         = JSON.parse(req.body.studentData);
     const formLevel = d.formLevel || 'form1';
-    const isF5      = formLevel === 'form5';
 
     if (regStatus[formLevel] && !regStatus[formLevel].open) {
-      return res.status(403).json({ success:false, error:'Usajili umefungwa', message: regStatus[formLevel]?.message });
+      return res.status(403).json({ success:false, error:'Usajili umefungwa', message:regStatus[formLevel]?.message });
     }
 
-    const fullName = [d.jina1,d.jina2,d.jina3].filter(Boolean).join(' ') || 'Haijajazwa';
-    const date     = new Date().toLocaleString('en-GB', { timeZone:'Africa/Dar_es_Salaam' });
-    const formLabel= isF5 ? 'Kidato cha 5' : 'Kidato cha Kwanza';
-
-    console.log(`New: ${formLabel} | ${fullName}`);
+    const name  = [d.jina1,d.jina2,d.jina3].filter(Boolean).join(' ')||'Haijajazwa';
+    const date  = new Date().toLocaleString('en-GB',{timeZone:'Africa/Dar_es_Salaam'});
+    const label = formLevel==='form5' ? 'Kidato cha 5' : 'Kidato cha Kwanza';
+    console.log(`📥 ${label} | ${name}`);
 
     studentId = await dbInsert({
-      form: isF5?'f5':'f1', form_level:formLevel,
-      jina1:d.jina1||null, jina2:d.jina2||null, jina3:d.jina3||null, full_name:fullName,
-      admission_no:d.admissionNo||null, tarehe:d.tarehe||null, jinsia:d.jinsia||null,
-      wilaya_kuzaliwa:d.wilayaKuzaliwa||null, uraia:d.uraia||null, dini:d.dini||null,
-      shule_iliyotoka:d.shuleIliyotoka||null, mkoa:d.mkoa||null, wilaya_makazi:d.wilayaMakazi||null,
-      tarafa:d.tarafa||null, kata:d.kata||null, kijiji:d.kijiji||null, nambari_nyumba:d.nambariNyumba||null,
-      baba_njina:d.babaNjina||null, baba_simu:d.babaSimu||null,
-      mama_njina:d.mamaNjina||null, mama_simu:d.mamaSimu||null,
-      mlezi_jina:d.mleziJina||null, mlezi_simu:d.mleziSimu||null,
-      ndugu_jina:d.nduguJina||null, ndugu_simu:d.nduguSimu||null,
-      mzazi_jina:d.mzaziJina||null, uhusiano:d.uhusiano||null,
-      mzazi_simu_kuu:d.mzaziSimuKuu||d.babaSimu||null,
-      mzazi_anwani:d.mzaziAnwani||null, mzazi_email:d.mzaziEmail||null,
-      damu:d.damu||null, bima:d.bima||null, bima_aina:d.bimaAina||null,
-      magonjwa:d.magonjwa||null, cheeti_status:d.cheetiStatus||null, fomu_d:d.fomuD||null,
-      combination:    isF5?(d.combination||null):null,
-      index_no_olevel:isF5?(d.indexNoOlevel||null):null,
-      csee_year:      isF5?(d.cseeYear||null):null,
-      csee_division:  isF5?(d.cseeDivision||null):null,
-      csee_points:    isF5?(d.cseePoints||null):null,
-      csee_aggregates:isF5?(d.cseeAggregates||null):null,
-      results_json:   isF5?(d.results||null):null,
-      registration_date:date, email_sent:false, raw_json:d
+      form:            formLevel==='form5'?'f5':'f1',
+      form_level:      formLevel,
+      jina1:           d.jina1||null,  jina2:d.jina2||null,  jina3:d.jina3||null,
+      full_name:       name,
+      admission_no:    d.admissionNo||null,
+      tarehe:          d.tarehe||null,
+      jinsia:          d.jinsia||null,
+      wilaya_kuzaliwa: d.wilayaKuzaliwa||null,
+      uraia:           d.uraia||null,
+      dini:            d.dini||null,
+      shule_iliyotoka: d.shuleIliyotoka||null,
+      mkoa:            d.mkoa||null,     wilaya_makazi:d.wilayaMakazi||null,
+      tarafa:          d.tarafa||null,   kata:d.kata||null,
+      kijiji:          d.kijiji||null,   nambari_nyumba:d.nambariNyumba||null,
+      baba_njina:      d.babaNjina||null, baba_simu:d.babaSimu||null,
+      mama_njina:      d.mamaNjina||null, mama_simu:d.mamaSimu||null,
+      mlezi_jina:      d.mleziJina||null, mlezi_simu:d.mleziSimu||null,
+      ndugu_jina:      d.nduguJina||null, ndugu_simu:d.nduguSimu||null,
+      mzazi_jina:      d.mzaziJina||null, uhusiano:d.uhusiano||null,
+      mzazi_simu_kuu:  d.mzaziSimuKuu||d.babaSimu||null,
+      mzazi_anwani:    d.mzaziAnwani||null, mzazi_email:d.mzaziEmail||null,
+      damu:            d.damu||null, bima:d.bima||null, bima_aina:d.bimaAina||null,
+      magonjwa:        d.magonjwa||null, cheeti_status:d.cheetiStatus||null, fomu_d:d.fomuD||null,
+      combination:     formLevel==='form5'?(d.combination||null):null,
+      index_no_olevel: formLevel==='form5'?(d.indexNoOlevel||null):null,
+      csee_year:       formLevel==='form5'?(d.cseeYear||null):null,
+      csee_division:   formLevel==='form5'?(d.cseeDivision||null):null,
+      csee_points:     formLevel==='form5'?(d.cseePoints||null):null,
+      csee_aggregates: formLevel==='form5'?(d.cseeAggregates||null):null,
+      results_json:    formLevel==='form5'?(d.results||null):null,
+      registration_date: date, email_sent:false, raw_json:d
     });
-    console.log(`Saved — ID: ${studentId}`);
+    console.log(`💾 Saved → Supabase ID: ${studentId}`);
 
-    let uploadedPdf = null;
+    const pdfFile = req.file||null;
     const attachments = [];
+    let   up = null;
     if (pdfFile?.buffer?.length) {
-      attachments.push({ filename:`TaboraBoys_${formLabel.replace(/\s+/g,'_')}_${fullName.replace(/\s+/g,'_')}_2026.pdf`, content:pdfFile.buffer, contentType:pdfFile.mimetype||'application/pdf' });
-      uploadedPdf = await uploadPdf({ buffer:pdfFile.buffer, contentType:pdfFile.mimetype, fileName:pdfFile.originalname, studentId });
-      if (uploadedPdf?.ok) {
-        await dbUpdate(studentId, { pdf_filename:uploadedPdf.path });
-        console.log('PDF saved:', uploadedPdf.path);
-      }
+      attachments.push({ filename:`TaboraBoys_${label.replace(/\s+/g,'_')}_${name.replace(/\s+/g,'_')}.pdf`, content:pdfFile.buffer, contentType:pdfFile.mimetype||'application/pdf' });
+      up = await uploadPdf({ buffer:pdfFile.buffer, contentType:pdfFile.mimetype, fileName:pdfFile.originalname, studentId });
+      if (up.ok) { await dbUpdate(studentId,{pdf_filename:up.path}); console.log(`📄 PDF → ${up.path}`); }
+      else         console.warn('⚠️  PDF upload failed:', up.error);
     }
 
-    if (!transporter) {
-      console.warn('Email skipped — SMTP not configured');
-      res.json({ success:true, message:'Umehifadhiwa mtandaoni! (Barua pepe haikutumwa)', studentId, emailSent:false, pdfStored:uploadedPdf?.ok?{bucket:uploadedPdf.bucket,path:uploadedPdf.path}:null });
-      return;
-    }
-
-    const info = await transporter.sendMail({
-      from:`"Tabora Boys Registration" <${SMTP_USER}>`,
+    const mail = await transporter.sendMail({
+      from:`"Tabora Boys Registration" <${process.env.SMTP_USER}>`,
       to:SCHOOL_EMAIL,
-      subject:`🎓 Usajili: ${fullName} | ${formLabel}${d.combination?' — '+d.combination:''} | ${date}`,
-      html:buildEmail(d, fullName, date, isF5),
+      subject:`🎓 Usajili Mpya: ${name} | ${label} | ${date}`,
+      html: formLevel==='form5' ? buildForm5EmailHTML(d,name,date) : buildEmailHTML(d,name,date),
       attachments
     });
-    await dbUpdate(studentId, { email_sent:true, email_message_id:info.messageId });
-    console.log(`Done — ID:${studentId}`);
-    res.json({ success:true, message:'Umehifadhiwa mtandaoni!', studentId, emailSent:true, pdfStored:uploadedPdf?.ok?{bucket:uploadedPdf.bucket,path:uploadedPdf.path}:null });
+    await dbUpdate(studentId,{email_sent:true, email_message_id:mail.messageId});
+    console.log(`✅ Done — ID ${studentId}`);
 
+    res.json({ success:true, message:'Usajili umefanikiwa!', studentId, emailSent:true, pdfStored:up?.ok?{bucket:up.bucket,path:up.path}:null });
   } catch(err) {
-    console.error('Register error:', err.message);
+    console.error('❌ Register error:', err.message);
     res.status(500).json({ success:false, error:err.message, studentId });
   }
 });
@@ -281,72 +294,88 @@ app.post('/api/register', upload.single('pdf'), async (req, res) => {
 app.get('/api/admin/students', async (req,res) => {
   const page=Math.max(1,parseInt(req.query.page||'1',10)), limit=Math.min(100,parseInt(req.query.limit||'20',10));
   try { const {rows,total}=await dbPage(page,limit); res.json({success:true,page,limit,total,pages:Math.ceil(total/limit),data:rows}); }
-  catch(e){ res.status(500).json({success:false,error:e.message}); }
+  catch(e){res.status(500).json({success:false,error:e.message});}
 });
 
 app.get('/api/admin/students/:id', async (req,res) => {
-  try { const r=await dbGetById(req.params.id); if(!r)return res.status(404).json({success:false,error:'Hapatikani'}); res.json({success:true,data:r}); }
-  catch(e){ res.status(500).json({success:false,error:e.message}); }
+  try { const row=await dbGetById(req.params.id); if(!row)return res.status(404).json({success:false,error:'Hapatikani'}); res.json({success:true,data:row}); }
+  catch(e){res.status(500).json({success:false,error:e.message});}
 });
 
 app.get('/api/admin/search', async (req,res) => {
-  const q=(req.query.q||'').trim(); if(!q)return res.json({success:true,count:0,data:[]});
+  const q=(req.query.q||'').trim();
+  if(!q)return res.json({success:true,count:0,data:[]});
   try {
-    const {data,error}=await supabase.from('students').select('id,created_at,full_name,admission_no,form_level,combination,shule_iliyotoka,email_sent').or(`full_name.ilike.%${q}%,admission_no.ilike.%${q}%,shule_iliyotoka.ilike.%${q}%`).order('id',{ascending:false}).limit(50);
+    const {data,error}=await supabase.from('students').select('id,created_at,full_name,admission_no,form_level,combination,shule_iliyotoka,mzazi_simu_kuu,email_sent')
+      .or(`full_name.ilike.%${q}%,admission_no.ilike.%${q}%,shule_iliyotoka.ilike.%${q}%,baba_njina.ilike.%${q}%,mama_njina.ilike.%${q}%`)
+      .order('id',{ascending:false}).limit(50);
     if(error)throw new Error(error.message);
     res.json({success:true,count:(data||[]).length,data:data||[]});
-  } catch(e){ res.status(500).json({success:false,error:e.message}); }
+  } catch(e){res.status(500).json({success:false,error:e.message});}
 });
 
 app.get('/api/admin/stats', async (req,res) => {
   try {
-    const [a,b,c,d]=await Promise.all([
+    const [t,es,f1,f5]=await Promise.all([
       supabase.from('students').select('id',{count:'exact',head:true}),
       supabase.from('students').select('id',{count:'exact',head:true}).eq('email_sent',true),
       supabase.from('students').select('id',{count:'exact',head:true}).eq('form_level','form1'),
-      supabase.from('students').select('id',{count:'exact',head:true}).eq('form_level','form5'),
+      supabase.from('students').select('id',{count:'exact',head:true}).eq('form_level','form5')
     ]);
-    res.json({success:true,total:a.count||0,emailSent:b.count||0,form1:c.count||0,form5:d.count||0});
-  } catch(e){ res.status(500).json({success:false,error:e.message}); }
+    res.json({success:true,total:t.count||0,emailSent:es.count||0,form1:f1.count||0,form5:f5.count||0});
+  } catch(e){res.status(500).json({success:false,error:e.message});}
+});
+
+app.get('/api/admin/summary', async (req,res) => {
+  try {
+    const [t,f1,f5]=await Promise.all([
+      supabase.from('students').select('id',{count:'exact',head:true}),
+      supabase.from('students').select('id',{count:'exact',head:true}).eq('form_level','form1'),
+      supabase.from('students').select('id',{count:'exact',head:true}).eq('form_level','form5')
+    ]);
+    res.json({success:true,total:t.count||0,form1:f1.count||0,form5:f5.count||0,regStatus});
+  } catch(e){res.status(500).json({success:false,error:e.message});}
 });
 
 app.get('/api/admin/export/json', async (req,res) => {
   try {
-    const {data,error}=await supabase.from('students').select('*').order('id');
+    const {data,error}=await supabase.from('students').select('*').order('id',{ascending:true});
     if(error)throw new Error(error.message);
     res.setHeader('Content-Disposition','attachment; filename="tabora_boys_2026.json"');
     res.setHeader('Content-Type','application/json');
     res.send(JSON.stringify(data||[],null,2));
-  } catch(e){ res.status(500).json({success:false,error:e.message}); }
+  } catch(e){res.status(500).json({success:false,error:e.message});}
 });
 
 app.get('/api/admin/export/csv', async (req,res) => {
   try {
-    const {data,error}=await supabase.from('students').select('*').order('id');
+    const {data,error}=await supabase.from('students').select('*').order('id',{ascending:true});
     if(error)throw new Error(error.message);
-    const rows=data||[]; if(!rows.length)return res.send('Hakuna data');
-    const esc=v=>{if(v==null)return'';const s=String(v);return(s.includes(',')||s.includes('"')||s.includes('\n'))?`"${s.replace(/"/g,'""')}"`:`${s}`;};
-    const keys=Object.keys(rows[0]);
+    const rows=data||[];
+    if(!rows.length)return res.send('Hakuna data');
+    const esc=v=>{if(v==null)return'';const s=String(v);return(s.includes(',')||s.includes('"')||s.includes('\n'))?`"${s.replace(/"/g,'""')}"`  :s;};
+    const h=Object.keys(rows[0]);
+    const csv=[h.join(','),...rows.map(r=>h.map(k=>esc(r[k])).join(','))].join('\r\n');
     res.setHeader('Content-Disposition','attachment; filename="tabora_boys_2026.csv"');
     res.setHeader('Content-Type','text/csv; charset=utf-8');
-    res.send('\uFEFF'+[keys.join(','),...rows.map(r=>keys.map(k=>esc(r[k])).join(','))].join('\r\n'));
-  } catch(e){ res.status(500).json({success:false,error:e.message}); }
+    res.send('\uFEFF'+csv);
+  } catch(e){res.status(500).json({success:false,error:e.message});}
 });
 
 app.delete('/api/admin/students/:id', async (req,res) => {
   try { await dbDelete(req.params.id); res.json({success:true,message:`ID ${req.params.id} imefutwa`}); }
-  catch(e){ res.status(500).json({success:false,error:e.message}); }
+  catch(e){res.status(500).json({success:false,error:e.message});}
 });
 
 app.get('/api/admin/students/:id/pdf', async (req,res) => {
   try {
-    const r=await dbGetById(req.params.id);
-    if(!r)return res.status(404).json({success:false,error:'Hapatikani'});
-    if(!r.pdf_filename)return res.status(404).json({success:false,error:'Hakuna PDF'});
-    const {data,error}=await supabase.storage.from(PDF_BUCKET).createSignedUrl(r.pdf_filename,SIGNED_TTL);
-    if(error||!data?.signedUrl)return res.status(500).json({success:false,error:error?.message});
-    res.json({success:true,signedUrl:data.signedUrl,name:r.full_name});
-  } catch(e){ res.status(500).json({success:false,error:e.message}); }
+    const row=await dbGetById(req.params.id);
+    if(!row)return res.status(404).json({success:false,error:'Hapatikani'});
+    if(!row.pdf_filename)return res.status(404).json({success:false,error:'Hakuna PDF'});
+    const {data,error}=await supabase.storage.from(PDF_BUCKET).createSignedUrl(row.pdf_filename,SIGNED_URL_TTL);
+    if(error||!data?.signedUrl)return res.status(500).json({success:false,error:error?.message||'Imeshindikana'});
+    res.json({success:true,id:row.id,name:row.full_name,signedUrl:data.signedUrl,expiresIn:SIGNED_URL_TTL});
+  } catch(e){res.status(500).json({success:false,error:e.message});}
 });
 
 app.get('/api/registration-status', (req,res) => {
@@ -358,62 +387,63 @@ app.get('/api/registration-status', (req,res) => {
 app.post('/api/registration-status', async (req,res) => {
   const {form,open,message,deadline}=req.body;
   if(!form||!regStatus[form])return res.status(400).json({error:'form lazima iwe form1 au form5'});
-  regStatus[form]={open:open===true||open==='true',message:message||'',deadline:deadline||''};
-  try { await setJsonSetting(SETTINGS_KEYS.regStatus, regStatus); res.json({success:true,form,status:regStatus[form]}); }
-  catch(e){ res.status(500).json({success:false,error:e.message}); }
+  regStatus[form]={open:open===true||open==='true', message:message||'', deadline:deadline||''};
+  try { await setSetting('reg_status',regStatus); res.json({success:true,form,status:regStatus[form]}); }
+  catch(e){res.status(500).json({success:false,error:e.message});}
 });
 
-app.get('/api/pdf-layout', (req,res) => res.json(pdfLayouts[req.query.form||'form1']||{}));
+app.get('/api/pdf-layout',(req,res)=>res.json(pdfLayouts[req.query.form||'form1']||{}));
 
 app.post('/api/pdf-layout', async (req,res) => {
   const {form,layout}=req.body;
   if(!form||!['form1','form5'].includes(form))return res.status(400).json({error:'form lazima iwe form1 au form5'});
   pdfLayouts[form]=layout||{};
-  try { await setJsonSetting(SETTINGS_KEYS.pdfLayouts, pdfLayouts); res.json({success:true,form}); }
-  catch(e){ res.status(500).json({success:false,error:e.message}); }
+  try { await setSetting('pdf_layouts',pdfLayouts); res.json({success:true,form}); }
+  catch(e){res.status(500).json({success:false,error:e.message});}
 });
 
-app.get('/api/nida/exists', async (req,res) => {
-  const nida = normalizeNida(req.query.nida);
-  if (!nida) return res.status(400).json({ success:false, error:'nida inahitajika' });
+app.get('/api/admin/students/filter', async (req,res) => {
+  const {form,combo}=req.query;
+  const page=Math.max(1,parseInt(req.query.page||'1',10)),limit=Math.min(100,parseInt(req.query.limit||'20',10));
   try {
-    const store = await getJsonSetting(SETTINGS_KEYS.nidaStore, { nidas: [] });
-    const list  = Array.isArray(store?.nidas) ? store.nidas : [];
-    res.json({ success:true, nida, exists: list.includes(nida) });
-  } catch(e) { res.status(500).json({ success:false, error:e.message }); }
+    let q=supabase.from('students').select('id,created_at,full_name,admission_no,form_level,combination,shule_iliyotoka,mzazi_simu_kuu,email_sent,registration_date',{count:'exact'}).order('id',{ascending:false}).range((page-1)*limit,page*limit-1);
+    if(form) q=q.eq('form_level',form);
+    if(combo)q=q.eq('combination',combo);
+    const {data,count,error}=await q;
+    if(error)throw new Error(error.message);
+    res.json({success:true,page,limit,total:count||0,pages:Math.ceil((count||0)/limit),data:data||[]});
+  } catch(e){res.status(500).json({success:false,error:e.message});}
 });
 
-app.post('/api/nida', async (req,res) => {
-  const nida = normalizeNida(req.body?.nida);
-  if (!nida) return res.status(400).json({ success:false, error:'nida inahitajika' });
-  try {
-    const store = await getJsonSetting(SETTINGS_KEYS.nidaStore, { nidas: [] });
-    const list  = Array.isArray(store?.nidas) ? store.nidas : [];
-    if (!list.includes(nida)) list.push(nida);
-    await setJsonSetting(SETTINGS_KEYS.nidaStore, { nidas: list });
-    res.json({ success:true, nida, stored:true });
-  } catch(e) { res.status(500).json({ success:false, error:e.message }); }
+// ══════════════════════════════════════════════════════════════
+//  START
+// ══════════════════════════════════════════════════════════════
+app.listen(PORT, () => {
+  console.log(`
+╔══════════════════════════════════════════════════════════════╗
+║  Tabora Boys — Registration Server (ONLINE MODE)             ║
+║  Port     : ${PORT}                                             ║
+║  Database : Supabase — ${(process.env.SUPABASE_URL||'').replace('https://','').split('.')[0]}          ║
+║  Frontend : ${FRONTEND_URL}                      ║
+╚══════════════════════════════════════════════════════════════╝`);
 });
 
-app.get('/api/admin/form-edits', async (req,res) => {
-  const form = req.query.form === 'form5' ? 'form5' : 'form1';
-  const key  = form === 'form5' ? SETTINGS_KEYS.formEditsForm5 : SETTINGS_KEYS.formEditsForm1;
-  try {
-    const edits = await getJsonSetting(key, {});
-    res.json({ success:true, form, edits: edits && typeof edits === 'object' ? edits : {} });
-  } catch(e) { res.status(500).json({ success:false, error:e.message }); }
-});
-
-app.post('/api/admin/form-edits', async (req,res) => {
-  const form  = req.body?.form === 'form5' ? 'form5' : 'form1';
-  const key   = form === 'form5' ? SETTINGS_KEYS.formEditsForm5 : SETTINGS_KEYS.formEditsForm1;
-  const edits = req.body?.edits;
-  if (!edits || typeof edits !== 'object') return res.status(400).json({ success:false, error:'edits lazima iwe object' });
-  try {
-    await setJsonSetting(key, edits);
-    res.json({ success:true, form });
-  } catch(e) { res.status(500).json({ success:false, error:e.message }); }
-});
-
-app.listen(PORT, () => console.log(`\n✅ Server running on port ${PORT} | DB: Supabase | Email: ${EMAIL_ENABLED ? 'enabled' : 'disabled'}\n`));
 module.exports = app;
+
+// ── Admin: form edits (save/load admin text edits) ─────────────
+app.get('/api/admin/form-edits', async (req, res) => {
+  const form = req.query.form || 'form1';
+  try {
+    const edits = await getSetting(`form_edits_${form}`, {});
+    res.json({ success: true, form, edits });
+  } catch(e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+app.post('/api/admin/form-edits', async (req, res) => {
+  const { form, edits } = req.body;
+  if (!form) return res.status(400).json({ error: 'form required' });
+  try {
+    await setSetting(`form_edits_${form}`, edits || {});
+    res.json({ success: true, form });
+  } catch(e) { res.status(500).json({ success: false, error: e.message }); }
+});
